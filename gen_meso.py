@@ -23,6 +23,7 @@ ap_ratio = 0.6 #60% AP
 rad_dev = 0.5 #standard deviation of radius sizes, normal distribution
 max_attempts = 500000 #will try to generate an image 500000 times before it gives up
 
+
 def gen_struct(save_path, save_path_untitled, img_size, mean_radius, ap_ratio, rad_dev, max_attempts):
     '''Generate a 2D microstructure assuming perfect circles, normal distribution
         returns untitled and titled images'''
@@ -45,7 +46,7 @@ def gen_struct(save_path, save_path_untitled, img_size, mean_radius, ap_ratio, r
     attempts = 0
     
     #use grid setup to check for overlap, rather than checking every grain every time
-    cell_size = 2.5 * mean_rad
+    cell_size = 4 * mean_rad
     n_cells = max(1, int(math.ceil(img_size / cell_size))) #numb er of cells in image
     
     grid = [[[] for _ in range(n_cells)] for __ in range(n_cells)] #empty grid
@@ -69,45 +70,64 @@ def gen_struct(save_path, save_path_untitled, img_size, mean_radius, ap_ratio, r
 
     #main function: place AP circles until we get to target area of AP 
     
-    while total_area < target_AP_area and attempts < max_attempts:
-        attempts += 1
+    max_tries = 5  # number of times to retry the whole image
+    success = False
+    best_circles = None
+    best_total_area = 0
+    for retry in range(max_tries):
+        # reset grid and circles
+        circles = []
+        grid = [[[] for _ in range(n_cells)] for __ in range(n_cells)]
+        total_area = 0
+        attempts = 0
         
-        #normal distribution for radii
-
-        #generate a number from normal dist
-        r = float(rng.normal(mean_rad, rad_dev * mean_rad))
-        #ensure no negative values, minimum radius 0.00001
-        r = max(r, 0.00001)
-        #ensure no radii bigger than 1/4 the image's width
-        r = min(r, 0.25 * img_size)
-        
-        #random coordinate for center of circle
-        '''want to see later if this works to plot some outside the domain,
-            and have some circles overlap with the edge of the image'''
-        
-        x = rng.uniform(r, img_size - r) #make sure it stays inside bounds
-        y = rng.uniform(r, img_size - r)
-        
-        #assume placement is valid until overlaps
-        valid = True
-        
-        #check for overlap
-        for (cx, cy, cr) in nearby_candidates(x, y):
-            if (cx - x)**2 + (cy - y)**2 < (cr + r)**2:
-                valid = False
-                break
-
-        if not valid:
-            continue #don't place
+        while total_area < target_AP_area and attempts < max_attempts:
+            attempts += 1
             
-        #accept placement, add to list
-        circles.append((x, y, r))
-        #add to grid
-        gx, gy = cell_coords(x, y)
-        grid[gx][gy].append(len(circles) - 1)
-        
-        total_area += math.pi * r**2
-    
+            #normal distribution for radii
+            #generate a number from normal dist
+            r = float(rng.normal(mean_rad, rad_dev * mean_rad))
+            #ensure no negative values, minimum radius 0.00001
+            r = max(r, 0.00001)
+            #ensure no radii bigger than 1/4 the image's width
+            r = min(r, 0.25 * img_size)
+            
+            #random coordinate for center of circle
+            '''want to see later if this works to plot some outside the domain,
+            and have some circles overlap with the edge of the image'''
+            
+            x = rng.uniform(r, img_size - r) #make sure it stays inside bounds
+            y = rng.uniform(r, img_size - r)
+            
+            #assume placement is valid until overlaps
+            valid = True
+            
+            #check for overlap
+            for (cx, cy, cr) in nearby_candidates(x, y):
+                if (cx - x)**2 + (cy - y)**2 < (cr + r)**2:
+                    valid = False
+                    break
+            
+            if not valid:
+                continue #don't place
+                    
+            #accept placement, add to list
+            circles.append((x, y, r))
+            #add to grid
+            gx, gy = cell_coords(x, y)
+            grid[gx][gy].append(len(circles) - 1)
+            
+            total_area += math.pi * r**2
+            
+            #keep the best try
+            if best_circles is None or abs(total_area - target_AP_area) < abs(best_total_area - target_AP_area):
+                best_circles = circles.copy()
+                best_total_area = total_area
+            
+            if total_area >= target_AP_area - 0.001:
+                break
+    circles = best_circles
+    total_area = best_total_area
     #untitled 1024 x 1024 
     #making the actual figure
     fig2, ax2 = plt.subplots(figsize=(6, 6), dpi=1024/6) #resolution 1024
@@ -156,15 +176,13 @@ def gen_struct(save_path, save_path_untitled, img_size, mean_radius, ap_ratio, r
             f"AP grains: mean radius = {mean_radius:.3f}, target AP = {ap_ratio:.3f}\n"
             f"Placed {len(circles)} grains, achieved AP = {total_area/img_area:.3f}"
     )
-    plt.tight_layout()
     fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
     
     plt.close(fig)
-
     
     return save_path, save_path_untitled
 
-    
+
 
 if __name__ == "__main__":
     save_path, save_path_untitled = gen_struct(save_path, save_path_untitled, img_size, mean_radius, ap_ratio, rad_dev, max_attempts)

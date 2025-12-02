@@ -36,7 +36,6 @@ def line_comp(save_path, column_index):
     htpb = (HTPB_count / total) * 100
     int = (interface_count / total) * 100
     
-    print(f'Column {column_index}: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
     return ap, htpb, int
 
 def draw_line(save_path, column_index, copy_path):
@@ -55,14 +54,12 @@ def draw_line(save_path, column_index, copy_path):
 def vert_avg(save_path):
     img = Image.open(save_path).convert("RGB")
     arr = np.array(img)
-    
     comp_list = []
     for col in range(arr.shape[1]):
         comp_list.append(line_comp(save_path, col))
     comp_array = np.array(comp_list)
-    av_comp = np.mean(comp_array)
+    av_comp = np.mean(comp_array, axis=0)
     ap_av, htpb_av, int_av = av_comp
-    print(f'Vertical Comp: AP: {ap_av:.2f} %, HTPB: {htpb_av:.2f} %, Interface: {int_av:.2f} %')
     return av_comp
 
 def trim_edges(save_path, trim_path):
@@ -80,14 +77,21 @@ def trim_edges(save_path, trim_path):
     
 if __name__ == "__main__":
     trim_edges(save_path, trim_path)
-    line_comp(trim_path, 200)
+    ap, htpb, int = line_comp(trim_path, 200)
+    print(f'Column 200: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
     draw_line(trim_path, 200, copy_path)
-    line_comp(trim_path, 500)
+    ap, htpb, int = line_comp(trim_path, 500)
+    print(f'Column 500: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
     draw_line(copy_path, 500, copy_path)
-    line_comp(trim_path, 800)
+    ap, htpb, int = line_comp(trim_path, 800)
+    print(f'Column 800: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
     draw_line(copy_path, 800, copy_path)
-    line_comp(trim_path, 1100)
+    ap, htpb, int = line_comp(trim_path, 1100)
+    print(f'Column 1100: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
     draw_line(copy_path, 1100, copy_path)
-    line_comp(trim_path, 1400)
+    ap, htpb, int = line_comp(trim_path, 1400)
+    print(f'Column 1400: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
     draw_line(copy_path, 1400, copy_path)
+    ap_av, htpb_av, int_av = vert_avg(trim_path)
+    print(f'Vertical Avg: AP: {ap_av:.2f} %, HTPB: {htpb_av:.2f} %, Interface: {int_av:.2f} %')
 

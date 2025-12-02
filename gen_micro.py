@@ -9,8 +9,6 @@ from PIL import Image
 
 #set variables
 
-#folder = r"C:\Users\jenna\OneDrive\Desktop\Research"
-
 folder = "./generated_images"
 os.makedirs(folder, exist_ok=True)  # create folder if it doesn't exist
 
@@ -155,4 +153,5 @@ def gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts
     
 
 if __name__ == "__main__":
+
     gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts)

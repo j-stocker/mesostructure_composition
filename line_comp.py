@@ -91,4 +91,3 @@ if __name__ == "__main__":
     line_comp(trim_path, 1400)
     draw_line(copy_path, 1400, copy_path)
 
-    

@@ -13,8 +13,8 @@ folder = "./generated_images"
 os.makedirs(folder, exist_ok=True)  # create folder if it doesn't exist
 
 # Full path for saving the figure
-save_path = os.path.join(folder, "mesostructure_untitled.png")
-
+save_path = os.path.join(folder, "mesostructure.png")
+save_path_untitled = os.path.join(folder, "mesostructure_untitled.png")
 
 img_size = 1 #square image, 1x1 (makes other values easier)
 mean_radius = 0.03 #given as a portion of the image's height/width, 3%
@@ -23,7 +23,7 @@ ap_ratio = 0.6 #60% AP
 rad_dev = 0.5 #standard deviation of radius sizes, normal distribution
 max_attempts = 500000 #will try to generate an image 500000 times before it gives up
 
-def gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts):
+def gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts, titled=True):
     '''Generate a 2D microstructure assuming perfect circles, normal distribution'''
     
     #random number generator to have various circle sizes
@@ -127,23 +127,20 @@ def gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts
             Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=1, zorder=10)
         )
         
-    #title with info
-    '''
-    ax.set_title(
-        f"AP grains: mean radius = {mean_radius:.3f}, target AP = {ap_ratio:.3f}\n"
-        f"Placed {len(circles)} grains, achieved AP = {total_area/img_area:.3f}"
-    )
-    '''
-    
     plt.tight_layout()
+    if titled==True:
+        
+        #title with info
     
-    #save the image
+        ax.set_title(
+            f"AP grains: mean radius = {mean_radius:.3f}, target AP = {ap_ratio:.3f}\n"
+            f"Placed {len(circles)} grains, achieved AP = {total_area/img_area:.3f}"
+        )
     
-    #untrimmed
-    #fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
-    
-    #trimmed
-    fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.0)
+        fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
+    else:
+        #trimmed
+        fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.0)
     plt.close(fig)
 
     print(f"\nSaved AP–HTPB microstructure image to: {save_path}")
@@ -153,5 +150,6 @@ def gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts
     
 
 if __name__ == "__main__":
-
     gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts)
+    gen_struct(save_path_untitled, img_size, mean_radius, ap_ratio, rad_dev, max_attempts, False)
+    

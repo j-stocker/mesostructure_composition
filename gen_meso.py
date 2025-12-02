@@ -23,8 +23,9 @@ ap_ratio = 0.6 #60% AP
 rad_dev = 0.5 #standard deviation of radius sizes, normal distribution
 max_attempts = 500000 #will try to generate an image 500000 times before it gives up
 
-def gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts, titled=True):
-    '''Generate a 2D microstructure assuming perfect circles, normal distribution'''
+def gen_struct(save_path, save_path_untitled, img_size, mean_radius, ap_ratio, rad_dev, max_attempts):
+    '''Generate a 2D microstructure assuming perfect circles, normal distribution
+        returns untitled and titled images'''
     
     #random number generator to have various circle sizes
     rng = np.random.default_rng()
@@ -106,11 +107,36 @@ def gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts
         grid[gx][gy].append(len(circles) - 1)
         
         total_area += math.pi * r**2
-        
+    
+    #untitled 1024 x 1024 
     #making the actual figure
-    fig, ax = plt.subplots(figsize=(6, 6), dpi=1024 // 6) #resolution 1024
-
+    fig2, ax2 = plt.subplots(figsize=(6, 6), dpi=1024/6) #resolution 1024
+    ax2.set_position([0, 0, 1, 1])
+    ax2.set_axis_off()
     #boundaries
+    ax2.set_xlim(0, img_size)
+    ax2.set_ylim(0, img_size)
+    ax2.set_aspect("equal", "box")
+    ax2.axis("off")
+    
+    #HTPB background, blue
+    ax2.add_patch(
+        plt.Rectangle((0, 0), img_size, img_size, facecolor='#0000FF', zorder=0) 
+    )
+    
+    #AP circles, red
+    for (x, y, r) in circles:
+        ax2.add_patch(
+            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=1, zorder=10)
+        )
+    fig2.savefig(save_path_untitled, dpi=1024/6, bbox_inches=None, pad_inches=0.0)
+    plt.close(fig2)
+    
+    #with title and padding
+    fig = plt.figure(figsize=(6, 6), dpi=1024/6)
+    ax = fig.add_axes([0, 0, 1, 1])  # fill entire figure, no margins
+
+    ax.set_axis_off()        # no ticks
     ax.set_xlim(0, img_size)
     ax.set_ylim(0, img_size)
     ax.set_aspect("equal", "box")
@@ -126,30 +152,21 @@ def gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts
         ax.add_patch(
             Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=1, zorder=10)
         )
-        
-    plt.tight_layout()
-    if titled==True:
-        
-        #title with info
-    
-        ax.set_title(
+    ax.set_title(
             f"AP grains: mean radius = {mean_radius:.3f}, target AP = {ap_ratio:.3f}\n"
             f"Placed {len(circles)} grains, achieved AP = {total_area/img_area:.3f}"
-        )
+    )
+    plt.tight_layout()
+    fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
     
-        fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
-    else:
-        #trimmed
-        fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.0)
     plt.close(fig)
 
-    print(f"\nSaved AP–HTPB microstructure image to: {save_path}")
-
-    return save_path
+    
+    return save_path, save_path_untitled
 
     
 
 if __name__ == "__main__":
-    gen_struct(save_path, img_size, mean_radius, ap_ratio, rad_dev, max_attempts)
-    gen_struct(save_path_untitled, img_size, mean_radius, ap_ratio, rad_dev, max_attempts, False)
+    save_path, save_path_untitled = gen_struct(save_path, save_path_untitled, img_size, mean_radius, ap_ratio, rad_dev, max_attempts)
+    print(f"\nSaved AP–HTPB microstructure images to: {save_path} and {save_path_untitled}")
     

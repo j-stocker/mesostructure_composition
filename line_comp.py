@@ -6,9 +6,10 @@ from PIL import Image, ImageDraw
 #image
 
 save_path = ".\generated_images\mesostructure_untitled.png"
-column = 512 
 copy_path = ".\generated_images\mesostructure_line.png" #image copy with line
 trim_path = ".\generated_images\mesostructure_trimmed.png"
+#untitled images set to 1024x1024 in previous script
+#trimmed images 922x922
 
 def line_comp(save_path, column_index):
     '''Pull a vertical line from an image and return % comp of AP, HTPB, and boundary (red, blue, purple)'''
@@ -77,21 +78,24 @@ def trim_edges(save_path, trim_path):
     
 if __name__ == "__main__":
     trim_edges(save_path, trim_path)
-    ap, htpb, int = line_comp(trim_path, 200)
-    print(f'Column 200: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
-    draw_line(trim_path, 200, copy_path)
-    ap, htpb, int = line_comp(trim_path, 500)
-    print(f'Column 500: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
-    draw_line(copy_path, 500, copy_path)
-    ap, htpb, int = line_comp(trim_path, 800)
-    print(f'Column 800: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
-    draw_line(copy_path, 800, copy_path)
-    ap, htpb, int = line_comp(trim_path, 1100)
-    print(f'Column 1100: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
-    draw_line(copy_path, 1100, copy_path)
-    ap, htpb, int = line_comp(trim_path, 1400)
-    print(f'Column 1400: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
-    draw_line(copy_path, 1400, copy_path)
+    ap, htpb, int = line_comp(trim_path, 75)
+    print(f'Column 75: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
+    draw_line(trim_path, 75, copy_path)
+    ap, htpb, int = line_comp(trim_path, 225)
+    print(f'Column 225: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
+    draw_line(copy_path, 225, copy_path)
+    ap, htpb, int = line_comp(trim_path, 375)
+    print(f'Column 375: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
+    draw_line(copy_path, 375, copy_path)
+    ap, htpb, int = line_comp(trim_path, 525)
+    print(f'Column 525: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
+    draw_line(copy_path, 525, copy_path)
+    ap, htpb, int = line_comp(trim_path, 675)
+    print(f'Column 675: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
+    draw_line(copy_path, 675, copy_path)
+    ap, htpb, int = line_comp(trim_path, 825)
+    print(f'Column 825: AP: {ap:.2f} %, HTPB: {htpb:.2f} %, Interface: {int:.2f} %')
+    draw_line(copy_path, 825, copy_path)
     ap_av, htpb_av, int_av = vert_avg(trim_path)
     print(f'Vertical Avg: AP: {ap_av:.2f} %, HTPB: {htpb_av:.2f} %, Interface: {int_av:.2f} %')
 

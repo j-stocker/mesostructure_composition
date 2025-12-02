@@ -4,12 +4,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 #image
-'''
-save_path = r"C:\Users\jenna\OneDrive\Desktop\Research\microstructure_untitled.png"
-column = 512 
-copy_path = r"C:\Users\jenna\OneDrive\Desktop\Research\microstructure_line.png" #image copy with line
-trim_path = r"C:\Users\jenna\OneDrive\Desktop\Research\microstructure_trimmed.png"
-'''
+
 save_path = ".\generated_images\mesostructure_untitled.png"
 column = 512 
 copy_path = ".\generated_images\mesostructure_line.png" #image copy with line
@@ -95,4 +90,5 @@ if __name__ == "__main__":
     draw_line(copy_path, 1100, copy_path)
     line_comp(trim_path, 1400)
     draw_line(copy_path, 1400, copy_path)
+
     

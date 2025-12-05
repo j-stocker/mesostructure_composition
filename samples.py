@@ -87,7 +87,7 @@ def generate():
         )
 
         AP_str = str(int(AP_achieved * 10000))  # 4-digit AP fraction without leading 0
-        radius_um = int(radius * 1e6)
+        radius_um = int(radius * 1e7) #3 digit radius
         final_png = os.path.join(folderA_png, f"uni_R{radius_um}um_AP{AP_str}.png")
         final_xyzr = os.path.join(folderA_xyzr, f"uni_R{radius_um}um_AP{AP_str}.xyzr")
 
@@ -136,7 +136,7 @@ def generate():
         )
 
         AP_str = str(int(AP_achieved * 10000))  # 4-digit AP fraction
-        radius_um = int(coarse_radius * 1e6)
+        radius_um = int(coarse_radius * 1e7) #3 digit radius
         final_png = os.path.join(folderC_png, f"bi_R{radius_um}um_AP{AP_str}.png")
         final_xyzr = os.path.join(folderC_xyzr, f"bi_R{radius_um}um_AP{AP_str}.xyzr")
 

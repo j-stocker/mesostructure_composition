@@ -157,10 +157,9 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
 
         # Sort largest -> smallest
         radii_list.sort(reverse=True)
-<<<<<<< HEAD
+
         r_iter = iter(radii_list)
-=======
->>>>>>> 5f632454ebfb2bd7275e0b654d311bd0a5ab372f
+
 
         # Iterator over sorted radii
         try:

@@ -63,7 +63,8 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
     #for image generation
 
     img_area = img_size **2 #make it a square
-    
+    r_min = 1e-6 / physical_size * img_size   # converts meters to image units
+    r_max = 150e-6 / physical_size * img_size
     target_AP_area = ap_ratio * img_area #absolute target area of AP
     
     #for calculating only area inside domain later
@@ -116,7 +117,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
 
     #main function: place AP circles until we get to target area of AP 
     
-    max_tries = 5  # number of times to retry the whole image
+    max_tries = 50  # number of times to retry the whole image
     success = False
     best_circles = None
     best_total_area = 0
@@ -156,6 +157,10 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
 
         # Sort largest -> smallest
         radii_list.sort(reverse=True)
+<<<<<<< HEAD
+        r_iter = iter(radii_list)
+=======
+>>>>>>> 5f632454ebfb2bd7275e0b654d311bd0a5ab372f
 
         # Iterator over sorted radii
         try:
@@ -187,8 +192,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
             #-----
             # LOG NORMAL DIST
             # Define min/max radius in image units
-            r_min = 1e-6 / physical_size * img_size   # converts meters to image units
-            r_max = 150e-6 / physical_size * img_size
+            
 
 
             # Sample radius

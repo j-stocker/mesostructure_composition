@@ -48,15 +48,20 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
     #random number generator to have various circle sizes
     rng = np.random.default_rng()
     #will place circles a bit outside domain
+    # Determine mean_rad for unimodal or bimodal
+    # Determine mean_rad for unimodal or bimodal
     if mode == 1:  # unimodal
-        mean_rad = physical_mean_radius / physical_size * img_size
+        mean_rad = float(physical_mean_radius) / physical_size * img_size
     elif mode == 2:  # bimodal
-        mean_rad = [r / physical_size * img_size for r in physical_mean_radius]     
+        # ensure physical_mean_radius is a list of 2 floats
+        if isinstance(physical_mean_radius[0], list) or isinstance(physical_mean_radius[1], list):
+            raise ValueError("For bimodal, physical_mean_radius must be a list of two floats, not nested lists.")
+        # convert both elements to scaled floats
+        mean_rad = [r / physical_size * img_size for r in physical_mean_radius]
+
+
     #for image generation
-    
-    #mean radius from fraction of image size to absolute sizing
-    mean_rad = physical_mean_radius/physical_size * img_size
-    
+
     img_area = img_size **2 #make it a square
     
     target_AP_area = ap_ratio * img_area #absolute target area of AP
@@ -72,7 +77,10 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
     attempts = 0
     
     #use grid setup to check for overlap, rather than checking every grain every time
-    cell_size = 4 * mean_rad
+    if mode == 1:
+        cell_size = 4 * mean_rad
+    else:
+        cell_size = 4 * max(mean_rad)  # use the larger radius
     n_cells = max(1, int(math.ceil(img_size / cell_size))) #numb er of cells in image
     
     grid = [[[] for _ in range(n_cells)] for __ in range(n_cells)] #empty grid
@@ -273,10 +281,17 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
         ax.add_patch(
             Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=1, zorder=10)
         )
+    if mode == 1:
+        radius_str = f"{physical_mean_radius/1e-6:.1f}"
+    else:
+        # For bimodal, show both coarse and fine
+        radius_str = f"{physical_mean_radius[0]/1e-6:.1f}/{physical_mean_radius[1]/1e-6:.1f}"
+
     ax.set_title(
-            f"AP grains: mean radius = {physical_mean_radius/1e-6:.1f} µm, target AP = {ap_ratio:.3f}\n"
-            f"Placed {len(circles)} grains, achieved AP = {total_area/img_area:.3f}"
+        f"AP grains: mean radius = {radius_str} µm, target AP = {ap_ratio:.3f}\n"
+        f"Placed {len(circles)} grains, achieved AP = {total_area/img_area:.3f}"
     )
+
     fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
     
     plt.close(fig)

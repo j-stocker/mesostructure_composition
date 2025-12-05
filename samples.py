@@ -74,6 +74,7 @@ os.makedirs(folder_ignore, exist_ok=True)
 save_path_ignore = os.path.join(folder_ignore, "ignore.png")
 
 def generate():
+    
     # --- A: Unimodal, varying particle size ---
     for i, radius in enumerate(avg_rad_50A):
         temp_png = os.path.join(folderA_png, f"temp_{i}.png")
@@ -120,11 +121,10 @@ def generate():
         else:
             print(f"Warning: {temp_xyzr} was not created!")
 
-
     # --- C: Bimodal, varying particle size ---
     for i, coarse_radius in enumerate(mean_rad_bi_size[0]):
         fine_radius = mean_rad_bi_size[1][i]  # pick corresponding fine particle
-        radius_input = [coarse_radius, fine_radius]  # pass as list for bimodal
+        radius_input = [float(coarse_radius), float(fine_radius)]  # pass as list for bimodal
 
         temp_png = os.path.join(folderC_png, f"temp_{i}.png")
         temp_xyzr = os.path.join(folderC_xyzr, f"temp_{i}.xyzr")

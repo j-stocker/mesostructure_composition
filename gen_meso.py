@@ -116,7 +116,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
 
     #main function: place AP circles until we get to target area of AP 
     
-    max_tries = 1  # number of times to retry the whole image
+    max_tries = 5  # number of times to retry the whole image
     success = False
     best_circles = None
     best_total_area = 0

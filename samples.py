@@ -24,18 +24,18 @@ def clear_folder(folder_path):
 
 # Parameters
 std_dev_uni = 0.2
-AP_vol_50A = 0.55
-avg_rad_50A = np.linspace(30e-6, 80e-6, 50)
+AP_vol_50A = 0.5
+avg_rad_50A = np.linspace(20e-6, 45e-6, 50)
 
-avg_rad_50B = 50e-6  # fixed particle size
+avg_rad_50B = 40e-6  # fixed particle size
 AP_vol_50B = np.linspace(0.5, 0.7, 50)  # varying AP
 
-std_dev_bi = [0.2, 0.5]
+std_dev_bi = [0.2, 0.4]
 mean_rad_bi_size = [np.linspace(80e-6, 130e-6, 50), [27e-6]*50]  # varying size, coarse/fine
-AP_fixed_bi = 0.55
+AP_fixed_bi = 0.5
 
-mean_rad_bi_AP = [125e-6, 15e-6]  # fixed size, coarse/fine
-AP_bi_var = np.linspace(0.5, 0.7, 50)  # varying AP
+mean_rad_bi_AP = [100e-6, 8e-6]  # fixed size, coarse/fine
+AP_bi_var = np.linspace(0.55, 0.75, 50)  # varying AP
 mix_bi = 1/10 #1:10 coarse:fine
 
 img_size = 1
@@ -88,8 +88,8 @@ def generate():
 
         AP_str = str(int(AP_achieved * 10000))  # 4-digit AP fraction without leading 0
         radius_um = int(radius * 1e6)
-        final_png = os.path.join(folderA_png, f"uni_AP{AP_str}_R{radius_um}um.png")
-        final_xyzr = os.path.join(folderA_xyzr, f"uni_AP{AP_str}_R{radius_um}um.xyzr")
+        final_png = os.path.join(folderA_png, f"uni_R{radius_um}um_AP{AP_str}.png")
+        final_xyzr = os.path.join(folderA_xyzr, f"uni_R{radius_um}um_AP{AP_str}.xyzr")
 
         if os.path.exists(temp_png):
             os.replace(temp_png, final_png)
@@ -137,8 +137,8 @@ def generate():
 
         AP_str = str(int(AP_achieved * 10000))  # 4-digit AP fraction
         radius_um = int(coarse_radius * 1e6)
-        final_png = os.path.join(folderC_png, f"bi_AP{AP_str}_R{radius_um}um.png")
-        final_xyzr = os.path.join(folderC_xyzr, f"bi_AP{AP_str}_R{radius_um}um.xyzr")
+        final_png = os.path.join(folderC_png, f"bi_R{radius_um}um_AP{AP_str}.png")
+        final_xyzr = os.path.join(folderC_xyzr, f"bi_R{radius_um}um_AP{AP_str}.xyzr")
 
         if os.path.exists(temp_png):
             os.replace(temp_png, final_png)

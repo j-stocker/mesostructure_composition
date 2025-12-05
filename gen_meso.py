@@ -63,7 +63,8 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
     #for image generation
 
     img_area = img_size **2 #make it a square
-    
+    r_min = 1e-6 / physical_size * img_size   # converts meters to image units
+    r_max = 150e-6 / physical_size * img_size
     target_AP_area = ap_ratio * img_area #absolute target area of AP
     
     #for calculating only area inside domain later
@@ -116,7 +117,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
 
     #main function: place AP circles until we get to target area of AP 
     
-    max_tries = 5  # number of times to retry the whole image
+    max_tries = 50  # number of times to retry the whole image
     success = False
     best_circles = None
     best_total_area = 0
@@ -126,7 +127,44 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
         grid = [[[] for _ in range(n_cells)] for __ in range(n_cells)]
         total_area = 0
         attempts = 0
-        
+        num_samples = int(max_attempts * 1.2)
+
+        radii_list = []
+
+        for _ in range(num_samples):
+
+            if mode == 1:  # unimodal
+                mu0 = np.log(mean_rad / np.sqrt(1 + rad_dev**2))
+                sigma0 = np.sqrt(np.log(1 + rad_dev**2))
+                r = sample_radius(r_min, r_max, mu0, sigma0, rng)
+
+            elif mode == 2:  # bimodal
+                dev0, dev1 = float(rad_dev[0]), float(rad_dev[1])
+                fine_mean = mean_rad_bi[0] / physical_size * img_size
+                coarse_mean = mean_rad_bi[1] / physical_size * img_size
+
+                mu0 = np.log(fine_mean / np.sqrt(1 + dev0**2))
+                sigma0 = np.sqrt(np.log(1 + dev0**2))
+                mu1 = np.log(coarse_mean / np.sqrt(1 + dev1**2))
+                sigma1 = np.sqrt(np.log(1 + dev1**2))
+
+                if rng.random() < mix:
+                    r = sample_radius(r_min, r_max, mu0, sigma0, rng)
+                else:
+                    r = sample_radius(r_min, r_max, mu1, sigma1, rng)
+
+            radii_list.append(r)
+
+        # Sort largest -> smallest
+        radii_list.sort(reverse=True)
+        r_iter = iter(radii_list)
+
+        # Iterator over sorted radii
+        try:
+            r = next(r_iter)
+        except StopIteration:
+            break  # no more radii left
+
         while total_area < target_AP_area and attempts < max_attempts:
             attempts += 1
             ''' NORMAL DIST
@@ -151,8 +189,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
             #-----
             # LOG NORMAL DIST
             # Define min/max radius in image units
-            r_min = 1e-6 / physical_size * img_size   # converts meters to image units
-            r_max = 150e-6 / physical_size * img_size
+            
 
 
             # Sample radius

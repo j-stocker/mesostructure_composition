@@ -44,7 +44,7 @@ def test_radius(radius_set):
     #do five microstructure generations and analyses per point
     for i in range(n): #for each 
         mini_list = []
-        for j in range(5):
+        for j in range(10):
             img_trimmed = img_trimmed = os.path.join(folder, f"trimmed_{i}.png")
             temp_ignore = os.path.join(folder, f"ignore_{i}.png")
             gm.gen_struct(temp_ignore, temp_img, 1, radius_set[i], comp_const, dev_const, 50000)

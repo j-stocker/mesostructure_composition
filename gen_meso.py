@@ -38,12 +38,12 @@ def save_xyzr(circles, filepath, img_size, physical_size):
             rp = r * scale
             f.write(f"{xp:.8e} {yp:.8e} 0.0 {rp:.8e}\n")
 
-def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev, max_attempts, mode, mix=0.5):
+def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev, max_attempts, mode, mix=0.5, max_tries=50):
     '''Generate a 2D microstructure assuming perfect circles, normal distribution
         returns untitled and titled images
         mode: 
             enter 1 for unimodal, 2 for bimodal'''
-    margin = 0.05
+    margin = 0.01
     
     #random number generator to have various circle sizes
     rng = np.random.default_rng()
@@ -79,9 +79,9 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
     
     #use grid setup to check for overlap, rather than checking every grain every time
     if mode == 1:
-        cell_size = 4 * mean_rad
+        cell_size = 40 * mean_rad #using bigger cell size for bigger area
     else:
-        cell_size = 4 * max(mean_rad)  # use the larger radius
+        cell_size = 40 * max(mean_rad)  # use the larger radius
     n_cells = max(1, int(math.ceil(img_size / cell_size))) #numb er of cells in image
     
     grid = [[[] for _ in range(n_cells)] for __ in range(n_cells)] #empty grid
@@ -117,7 +117,6 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
 
     #main function: place AP circles until we get to target area of AP 
     
-    max_tries = 50  # number of times to retry the whole image
     success = False
     best_circles = None
     best_total_area = 0
@@ -213,9 +212,6 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
                     r = sample_radius(r_min, r_max, mu0, sigma0, rng)
                 else:
                     r = sample_radius(r_min, r_max, mu1, sigma1, rng)
-
-
-
             
             #random coordinate for center of circle
             '''want to see later if this works to plot some outside the domain,
@@ -235,7 +231,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
             
             if not valid:
                 continue #don't place
-                    
+            
             #accept placement, add to list
             circles.append((x, y, r))
             #add to grid

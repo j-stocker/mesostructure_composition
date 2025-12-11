@@ -38,7 +38,7 @@ def save_xyzr(circles, filepath, img_size, physical_size):
             rp = r * scale
             f.write(f"{xp:.8e} {yp:.8e} 0.0 {rp:.8e}\n")
 
-def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev, max_attempts, mode, mix=0.5, max_tries=50):
+def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev, max_attempts, mode, mix=0.5, max_tries=50, interface_width=2e-6): #2 um
     '''Generate a 2D microstructure assuming perfect circles, normal distribution
         returns untitled and titled images
         mode: 
@@ -291,7 +291,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
     #AP circles, red
     for (x, y, r) in circles:
         ax2.add_patch(
-            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=1, zorder=10)
+            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size*1024), zorder=10)
         )
     fig2.savefig(save_path_untitled, dpi=1024/6, bbox_inches=None, pad_inches=0.0)
     plt.close(fig2)
@@ -314,7 +314,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
     #AP circles, red
     for (x, y, r) in circles:
         ax.add_patch(
-            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=1, zorder=10)
+            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size*1024), zorder=10)
         )
     if mode == 1:
         radius_str = f"{physical_mean_radius/1e-6:.1f}"

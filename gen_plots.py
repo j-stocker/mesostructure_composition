@@ -18,8 +18,7 @@ def plotA():
         next(f)  # skip header
         for line in f:
             cols = [float(x.strip()) for x in line.split(',')]
-            
-            radius_um.append(cols[0])
+            radius_um.append(cols[0]/10)
             ap_percentA.append(cols[1])
             htpb_percentA.append(cols[2])
             interface_percentA.append(cols[3])
@@ -29,8 +28,8 @@ def plotA():
     plt.plot(radius_um, htpb_percentA, label="HTPB %")
     plt.plot(radius_um, interface_percentA, label="Interface %")
 
-    plt.xlabel("Sample Index")
-    plt.ylabel("Value")
+    plt.xlabel("Average Particle Size (um)")
+    plt.ylabel("% Component")
     plt.title("Results Plot")
     plt.legend()
     plt.grid(True)
@@ -61,8 +60,8 @@ def plotB():
     plt.plot(AP_achieved, htpb_percentB, label="HTPB %")
     plt.plot(AP_achieved, interface_percentB, label="Interface %")
 
-    plt.xlabel("Sample Index")
-    plt.ylabel("Value")
+    plt.xlabel("AP %")
+    plt.ylabel("% Component")
     plt.title("Results Plot")
     plt.legend()
     plt.grid(True)
@@ -73,5 +72,5 @@ def plotB():
 
 
 if __name__ == "__main__":
-    plotB()
+    plotA()
     

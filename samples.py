@@ -26,7 +26,7 @@ def clear_folder(folder_path):
 
 # Parameters
 std_dev_uni = 0.4
-AP_vol_50A = 0.5
+AP_vol_50A = 0.45
 avg_rad_50A = np.linspace(60e-6, 110e-6, 100)
 
 avg_rad_50B = 70e-6  # fixed particle size
@@ -113,11 +113,11 @@ def generateA():
         _, _, AP_achieved, _ = gm.gen_struct(
             temp_png, save_path_ignore, temp_xyzr,
             img_size, physical_size, radius, AP_vol_50A,
-            std_dev_uni, max_attempts, mode=1, max_tries=10000
+            std_dev_uni, max_attempts, mode=1, max_tries=100
         )
 
         AP_str = str(int(AP_achieved * 10000))  # 4-digit AP fraction without leading 0
-        radius_um = int(radius * 1e6) #3 digit radius
+        radius_um = int(radius * 1e7) #3 digit radius
         final_png = os.path.join(folderA_png, f"uni_R{radius_um}um_AP{AP_str}.png")
         final_xyzr = os.path.join(folderA_xyzr, f"uni_R{radius_um}um_AP{AP_str}.xyzr")
         ap, htpb, interface = lc.vert_avg(save_path_ignore)
@@ -145,7 +145,7 @@ def generateB():
         _, _, AP_achieved, _ = gm.gen_struct(
             temp_png, save_path_ignore, temp_xyzr,
             img_size, physical_size, avg_rad_50B, AP_target,
-            std_dev_uni, max_attempts, mode=1, max_tries=10
+            std_dev_uni, max_attempts, mode=1, max_tries=100
         )
 
         AP_str = str(int(AP_achieved * 10000))
@@ -238,9 +238,9 @@ def generateD():
 
 
 if __name__ == "__main__":
-    reset()
-    generateA()
-    generateB()
-    print('Success!')
+    #reset()
+    #generateA()
+    #generateB()
+    #print('Success!')
     gp.plotA()
     gp.plotB()

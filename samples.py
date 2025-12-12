@@ -23,14 +23,13 @@ def clear_folder(folder_path):
 
 
 
-
 # Parameters
 std_dev_uni = 0.4
-AP_vol_50A = 0.45
-avg_rad_50A = np.linspace(60e-6, 110e-6, 100)
+AP_vol_50A = 0.4
+avg_rad_50A = np.linspace(50e-6, 100e-6, 200)
 
 avg_rad_50B = 70e-6  # fixed particle size
-AP_vol_50B = np.linspace(0.4, 0.5, 100)  # varying AP
+AP_vol_50B = np.linspace(0.35, 0.60, 200)  # varying AP
 
 std_dev_bi = [0.2, 0.5] #standard dev of coarse and fine groups
 mean_rad_bi_size = [np.linspace(90e-6, 110e-6, 50), [4e-6]*50]  # varying size, coarse/fine
@@ -113,7 +112,7 @@ def generateA():
         _, _, AP_achieved, _ = gm.gen_struct(
             temp_png, save_path_ignore, temp_xyzr,
             img_size, physical_size, radius, AP_vol_50A,
-            std_dev_uni, max_attempts, mode=1, max_tries=100
+            std_dev_uni, max_attempts, mode=1, max_tries=200
         )
 
         AP_str = str(int(AP_achieved * 10000))  # 4-digit AP fraction without leading 0
@@ -145,7 +144,7 @@ def generateB():
         _, _, AP_achieved, _ = gm.gen_struct(
             temp_png, save_path_ignore, temp_xyzr,
             img_size, physical_size, avg_rad_50B, AP_target,
-            std_dev_uni, max_attempts, mode=1, max_tries=100
+            std_dev_uni, max_attempts, mode=1, max_tries=200
         )
 
         AP_str = str(int(AP_achieved * 10000))
@@ -238,9 +237,9 @@ def generateD():
 
 
 if __name__ == "__main__":
-    #reset()
+    reset()
     #generateA()
-    #generateB()
-    #print('Success!')
-    gp.plotA()
+    generateB()
+    print('Success!')
+    #gp.plotA()
     gp.plotB()

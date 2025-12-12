@@ -24,13 +24,13 @@ def plotA():
             interface_percentA.append(cols[3])
 
     plt.figure(figsize=(10, 6))
-    plt.plot(radius_um, ap_percentA, label="AP %")
-    plt.plot(radius_um, htpb_percentA, label="HTPB %")
+    #plt.plot(radius_um, ap_percentA, label="AP %")
+    #plt.plot(radius_um, htpb_percentA, label="HTPB %")
     plt.plot(radius_um, interface_percentA, label="Interface %")
 
     plt.xlabel("Average Particle Size (um)")
     plt.ylabel("% Component")
-    plt.title("Results Plot")
+    plt.title("Particle Sixe vs % Comp")
     plt.legend()
     plt.grid(True)
     save_path = os.path.join(save_dir_A, "varying_size_plot.png")
@@ -62,14 +62,12 @@ def plotB():
 
     plt.xlabel("AP %")
     plt.ylabel("% Component")
-    plt.title("Results Plot")
+    plt.title("AP Achieved vs % Comp")
     plt.legend()
     plt.grid(True)
     save_path = os.path.join(save_dir_B, "varying_AP_plot.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print('Saved plot as varying_AP_plot.png')
-
-
 
 if __name__ == "__main__":
     plotA()

@@ -38,12 +38,12 @@ def save_xyzr(circles, filepath, img_size, physical_size):
             rp = r * scale
             f.write(f"{xp:.8e} {yp:.8e} 0.0 {rp:.8e}\n")
 
-def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev, max_attempts, mode, mix=0.5):
+def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev, max_attempts, mode, mix=0.5, max_tries=50, interface_width=2e-6): #2 um
     '''Generate a 2D microstructure assuming perfect circles, normal distribution
         returns untitled and titled images
         mode: 
             enter 1 for unimodal, 2 for bimodal'''
-    margin = 0.05
+    margin = 0.01
     
     #random number generator to have various circle sizes
     rng = np.random.default_rng()
@@ -79,9 +79,9 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
     
     #use grid setup to check for overlap, rather than checking every grain every time
     if mode == 1:
-        cell_size = 4 * mean_rad
+        cell_size = 40 * mean_rad #using bigger cell size for bigger area
     else:
-        cell_size = 4 * max(mean_rad)  # use the larger radius
+        cell_size = 40 * max(mean_rad)  # use the larger radius
     n_cells = max(1, int(math.ceil(img_size / cell_size))) #numb er of cells in image
     
     grid = [[[] for _ in range(n_cells)] for __ in range(n_cells)] #empty grid
@@ -117,7 +117,6 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
 
     #main function: place AP circles until we get to target area of AP 
     
-    max_tries = 50  # number of times to retry the whole image
     success = False
     best_circles = None
     best_total_area = 0
@@ -157,8 +156,8 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
 
         # Sort largest -> smallest
         radii_list.sort(reverse=True)
-        r_iter = iter(radii_list)
 
+        r_iter = iter(radii_list)
 
 
         # Iterator over sorted radii
@@ -213,9 +212,6 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
                     r = sample_radius(r_min, r_max, mu0, sigma0, rng)
                 else:
                     r = sample_radius(r_min, r_max, mu1, sigma1, rng)
-
-
-
             
             #random coordinate for center of circle
             '''want to see later if this works to plot some outside the domain,
@@ -235,7 +231,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
             
             if not valid:
                 continue #don't place
-                    
+            
             #accept placement, add to list
             circles.append((x, y, r))
             #add to grid
@@ -295,7 +291,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
     #AP circles, red
     for (x, y, r) in circles:
         ax2.add_patch(
-            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=1, zorder=10)
+            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size*1024), zorder=10)
         )
     fig2.savefig(save_path_untitled, dpi=1024/6, bbox_inches=None, pad_inches=0.0)
     plt.close(fig2)
@@ -318,7 +314,7 @@ def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical
     #AP circles, red
     for (x, y, r) in circles:
         ax.add_patch(
-            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=1, zorder=10)
+            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size*1024), zorder=10)
         )
     if mode == 1:
         radius_str = f"{physical_mean_radius/1e-6:.1f}"

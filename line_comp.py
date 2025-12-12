@@ -12,7 +12,7 @@ trim_path = ".\generated_images\mesostructure_trimmed.png"
 #trimmed images 922x922
 
 def line_comp(save_path, column_index):
-    '''Pull a vertical line from an image and return % comp of AP, HTPB, and boundary (red, blue, purple)'''
+    '''Pull a vertical line from an image and return % comp of AP, HTPB, and interface (red, blue, purple)'''
     
     img = Image.open(save_path).convert("RGB")
     arr = np.array(img)
@@ -59,10 +59,10 @@ def vert_avg(save_path):
     for col in range(arr.shape[1]):
         comp_list.append(line_comp(save_path, col))
     comp_array = np.array(comp_list)
-    av_comp = np.mean(comp_array, axis=0)
-    ap_av, htpb_av, int_av = av_comp
-    return av_comp
+    ap_av, htpb_av, int_av = np.mean(comp_array, axis=0)
+    return ap_av, htpb_av, int_av
 
+#DON"T NEED THIS WITH UPDATED GEN_STRUCT
 def trim_edges(save_path, trim_path):
     '''trims edges, takes 5% of square image's width off each edge, so 1x1 is now 0.9x0.9'''
     img = Image.open(save_path).convert("RGB")
@@ -75,6 +75,8 @@ def trim_edges(save_path, trim_path):
     trimmed_img = img.crop(crop_box)
     trimmed_img.save(trim_path)
     return trimmed_img
+
+
     
 if __name__ == "__main__":
     trim_edges(save_path, trim_path)

@@ -25,19 +25,19 @@ def clear_folder(folder_path):
 
 # Parameters
 std_dev_uni = 0.4
-AP_vol_50A = 0.4
+AP_vol_50A = 0.55
 avg_rad_50A = np.linspace(50e-6, 100e-6, 200)
 
 avg_rad_50B = 70e-6  # fixed particle size
-AP_vol_50B = np.linspace(0.35, 0.60, 200)  # varying AP
+AP_vol_50B = np.linspace(0.35, 0.65, 200)  # varying AP
 
-std_dev_bi = [0.2, 0.5] #standard dev of coarse and fine groups
-mean_rad_bi_size = [np.linspace(90e-6, 110e-6, 50), [4e-6]*50]  # varying size, coarse/fine
-AP_fixed_bi = 0.5
+std_dev_bi = [0.2, 0.3] #standard dev of coarse and fine groups
+mean_rad_bi_size = [np.linspace(80e-6, 110e-6, 2), 25e-6]  # varying size, coarse/fine
+AP_fixed_bi = 0.55
 
-mean_rad_bi_AP = [110e-6, 4e-6]  # fixed size, coarse/fine
-AP_bi_var = np.linspace(0.5, 0.7, 50)  # varying AP
-mix_bi = 1/10 #1:10 coarse:fine
+mean_rad_bi_AP = [100e-6, 20e-6]  # fixed size, coarse/fine
+AP_bi_var = np.linspace(0.35, 0.65, 5)  # varying AP
+mix_bi = 1/20 #coarse:fine
 
 img_size = 1
 physical_size = 30e-4
@@ -60,10 +60,10 @@ folderD_xyzr = "./generated_images/bimodal_varying_AP_ratio/xyzrs"
 
 folder_ignore = "./generated_images/ignore"
 
-resultsA = "./generated_images/unimodal_varying_part_size/results.txt"
-resultsB = "./generated_images/unimodal_varying_AP_ratio/results.txt"
-resultsC = "./generated_images/bimodal_varying_part_size/results.txt"
-resultsD = "./generated_images/bimodal_varying_AP_ratio/results.txt"
+resultsA = "./generated_images/unimodal_varying_part_size/results_uni_part_size.txt"
+resultsB = "./generated_images/unimodal_varying_AP_ratio/results_uni_AP_ratio.txt"
+resultsC = "./generated_images/bimodal_varying_part_size/results_bi_part_size.txt"
+resultsD = "./generated_images/bimodal_varying_AP_ratio/results_bi_AP_ratio.txt"
 
 
 def reset():
@@ -166,26 +166,38 @@ def generateB():
 
 def generateC():
     results = []
+    
     # --- C: Bimodal, varying particle size ---
     for i, coarse_radius in enumerate(mean_rad_bi_size[0]):
-        fine_radius = mean_rad_bi_size[1][i]  # pick corresponding fine particle
+        avg_radius = []
+        avg_radii = []
+        fine_radius = mean_rad_bi_size[1]  # pick corresponding fine particle
         radius_input = [float(coarse_radius), float(fine_radius)]  # pass as list for bimodal
 
         temp_png = os.path.join(folderC_png, f"temp_{i}.png")
         temp_xyzr = os.path.join(folderC_xyzr, f"temp_{i}.xyzr")
-
+        
         _, _, AP_achieved, _ = gm.gen_struct(
             temp_png, save_path_ignore, temp_xyzr,
             img_size, physical_size, radius_input, AP_fixed_bi,
             std_dev_bi, max_attempts, mode=2, mix=mix_bi
         )
 
+        #pull average radius from xyzr
+        with open(temp_xyzr, "r") as f:
+            for line in f:# 4th column = radius
+                parts = line.strip().split()
+                avg_radii.append(float(parts[3]))
+            image_avg_radius = np.mean(avg_radii)
+        avg_radius.append(image_avg_radius*1e6) #put in um
+
         AP_str = str(int(AP_achieved * 10000))  # 4-digit AP fraction
         radius_um = int(coarse_radius * 1e6) #3 digit radius
         final_png = os.path.join(folderC_png, f"bi_R{radius_um}um_AP{AP_str}.png")
         final_xyzr = os.path.join(folderC_xyzr, f"bi_R{radius_um}um_AP{AP_str}.xyzr")
         ap, htpb, interface = lc.vert_avg(save_path_ignore)
-        results.append((AP_achieved, ap, htpb, interface))
+        
+        results.append((AP_achieved, ap, htpb, interface, avg_radius[0]))
         if os.path.exists(temp_png):
             os.replace(temp_png, final_png)
         if os.path.exists(temp_xyzr):
@@ -193,9 +205,9 @@ def generateC():
         else:
             print(f"Warning: {temp_xyzr} was not created!")
     with open(resultsC, "w") as f:
-        f.write("AP_achieved, AP_vert, HTPB_vert, Interface_vert\n")  # optional header
+        f.write("AP_achieved, AP_vert, HTPB_vert, Interface_vert, Avg Radius\n")  # optional header
         for item in results:
-            f.write(f"{item[0]}, {item[1]}, {item[2]}, {item[3]}\n")
+            f.write(f"{item[0]}, {item[1]}, {item[2]}, {item[3]}, {item[4]}\n")
 
 def generateD():
     results = []
@@ -205,6 +217,8 @@ def generateD():
     radius_input = [coarse_radius, fine_radius]
 
     for i, AP_target in enumerate(AP_bi_var):
+        avg_radius = []
+        avg_radii = []
         temp_png = os.path.join(folderD_png, f"temp_{i}.png")
         temp_xyzr = os.path.join(folderD_xyzr, f"temp_{i}.xyzr")
 
@@ -213,13 +227,20 @@ def generateD():
             img_size, physical_size, radius_input, AP_target,
             std_dev_bi, max_attempts, mode=2, mix=mix_bi
         )
+        
+        with open(temp_xyzr, "r") as f:
+            for line in f:# 4th column = radius
+                parts = line.strip().split()
+                avg_radii.append(float(parts[3]))
+            image_avg_radius = np.mean(avg_radii)
+        avg_radius.append(image_avg_radius*1e6)
 
         AP_str = str(int(AP_achieved * 10000))  # 4-digit AP fraction
         radius_um = int(coarse_radius * 1e6)
         final_png = os.path.join(folderD_png, f"bi_AP{AP_str}_R{radius_um}um.png")
         final_xyzr = os.path.join(folderD_xyzr, f"bi_AP{AP_str}_R{radius_um}um.xyzr")
         ap, htpb, interface = lc.vert_avg(save_path_ignore)
-        results.append((AP_achieved, ap, htpb, interface))
+        results.append((AP_achieved, ap, htpb, interface, avg_radius[0]))
         if os.path.exists(temp_png):
             os.replace(temp_png, final_png)
         if os.path.exists(temp_xyzr):
@@ -227,9 +248,9 @@ def generateD():
         else:
             print(f"Warning: {temp_xyzr} was not created!")
     with open(resultsD, "w") as f:
-        f.write("AP_achieved, AP_vert, HTPB_vert, Interface_vert\n")  # optional header
+        f.write("AP_achieved, AP_vert, HTPB_vert, Interface_vert, Avg Radius\n")  # optional header
         for item in results:
-            f.write(f"{item[0]}, {item[1]}, {item[2]}, {item[3]}\n")
+            f.write(f"{item[0]}, {item[1]}, {item[2]}, {item[3]}, {item[4]}\n")
 
 
 
@@ -239,7 +260,10 @@ def generateD():
 if __name__ == "__main__":
     reset()
     #generateA()
-    generateB()
+    #generateB()
+    #generateC()
+    generateD()
     print('Success!')
     #gp.plotA()
-    gp.plotB()
+    #gp.plotB()
+    

@@ -32,11 +32,11 @@ avg_rad_50B = 70e-6  # fixed particle size
 AP_vol_50B = np.linspace(0.35, 0.65, 200)  # varying AP
 
 std_dev_bi = [0.2, 0.25] #standard dev of coarse and fine groups
-mean_rad_bi_size = [np.linspace(80e-6, 110e-6, 2), 25e-6]  # varying size, coarse/fine
+mean_rad_bi_size = [np.linspace(80e-6, 110e-6, 200), 25e-6]  # varying size, coarse/fine
 AP_fixed_bi = 0.55
 
 mean_rad_bi_AP = [90e-6, 20e-6]  # fixed size, coarse/fine
-AP_bi_var = np.linspace(0.35, 0.65, 200)
+AP_bi_var = np.linspace(0.40, 0.55, 100)
 #AP_bi_var = np.linspace(0.35, 0.65, 5)  # varying AP
 mix_bi = 1/20 #coarse:fine
 
@@ -294,6 +294,7 @@ def tester_structures():
             os.replace(temp_xyzr, final_xyzr)
         else:
             print(f"Warning: {temp_xyzr} was not created!")
+        #put something with equation in here too...
     with open(resultsB, "w") as f:
         f.write("AP_achieved, Avg Radius (um), Interface %\n")  # optional header
         for item in results:

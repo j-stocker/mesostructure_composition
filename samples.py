@@ -31,12 +31,13 @@ avg_rad_50A = np.linspace(50e-6, 100e-6, 200)
 avg_rad_50B = 70e-6  # fixed particle size
 AP_vol_50B = np.linspace(0.35, 0.65, 200)  # varying AP
 
-std_dev_bi = [0.2, 0.3] #standard dev of coarse and fine groups
+std_dev_bi = [0.2, 0.25] #standard dev of coarse and fine groups
 mean_rad_bi_size = [np.linspace(80e-6, 110e-6, 2), 25e-6]  # varying size, coarse/fine
 AP_fixed_bi = 0.55
 
-mean_rad_bi_AP = [100e-6, 20e-6]  # fixed size, coarse/fine
-AP_bi_var = np.linspace(0.35, 0.65, 5)  # varying AP
+mean_rad_bi_AP = [90e-6, 20e-6]  # fixed size, coarse/fine
+AP_bi_var = np.linspace(0.35, 0.65, 200)
+#AP_bi_var = np.linspace(0.35, 0.65, 5)  # varying AP
 mix_bi = 1/20 #coarse:fine
 
 img_size = 1
@@ -58,12 +59,16 @@ folderC_xyzr = "./generated_images/bimodal_varying_part_size/xyzrs"
 folderD_png = "./generated_images/bimodal_varying_AP_ratio/pngs"
 folderD_xyzr = "./generated_images/bimodal_varying_AP_ratio/xyzrs"
 
+folderE_png = "./generated_images/test/pngs"
+folderE_xyzr = "./generated_images/test/xyzrs"
+
 folder_ignore = "./generated_images/ignore"
 
 resultsA = "./generated_images/unimodal_varying_part_size/results_uni_part_size.txt"
 resultsB = "./generated_images/unimodal_varying_AP_ratio/results_uni_AP_ratio.txt"
 resultsC = "./generated_images/bimodal_varying_part_size/results_bi_part_size.txt"
 resultsD = "./generated_images/bimodal_varying_AP_ratio/results_bi_AP_ratio.txt"
+resultsE = "./generated_images/test/results.txt"
 
 
 def reset():
@@ -78,6 +83,10 @@ def reset():
 
     clear_folder(folderD_png)
     clear_folder(folderD_xyzr)
+    
+    clear_folder(folderE_png)
+    clear_folder(folderE_xyzr)
+
 
     os.makedirs(folderA_png, exist_ok=True)
     os.makedirs(folderA_xyzr, exist_ok=True)
@@ -90,11 +99,14 @@ def reset():
 
     os.makedirs(folderD_png, exist_ok=True)
     os.makedirs(folderD_xyzr, exist_ok=True)
+    
+    os.makedirs(folderE_png, exist_ok=True)
+    os.makedirs(folderE_xyzr, exist_ok=True)
 
     os.makedirs(folder_ignore, exist_ok=True)
 
 
-    for fp in [resultsA, resultsB, resultsC, resultsD]:
+    for fp in [resultsA, resultsB, resultsC, resultsD, resultsE]:
         os.makedirs(os.path.dirname(fp), exist_ok=True)
 
 
@@ -253,15 +265,46 @@ def generateD():
             f.write(f"{item[0]}, {item[1]}, {item[2]}, {item[3]}, {item[4]}\n")
 
 
+def tester_structures():
+    '''Generating random radii/%AP, put into text file, see if it matches with equation'''
+    #just going to test with unimodal to start
+    avg_rad_set = np.random.uniform(25e-6, 125e-6, 100)
+    percent_ap = np.random.uniform(0.35, 0.65, 100)
+    results = []
 
-    
+    for i, AP_target in enumerate(percent_ap):
+        temp_png = os.path.join(folderE_png, f"temp_{i}.png")
+        temp_xyzr = os.path.join(folderE_xyzr, f"temp_{i}.xyzr")
+
+        _, _, AP_achieved, _ = gm.gen_struct(
+            temp_png, save_path_ignore, temp_xyzr,
+            img_size, physical_size, avg_rad_set[i], AP_target,
+            std_dev_uni, max_attempts, mode=1, max_tries=200
+        )
+
+        AP_str = str(int(AP_achieved * 10000))
+        radius_um = int(avg_rad_set[i] * 1e6)
+        final_png = os.path.join(folderE_png, f"uni_AP{AP_str}_R{radius_um}um.png")
+        final_xyzr = os.path.join(folderE_xyzr, f"uni_AP{AP_str}_R{radius_um}um.xyzr")
+        ap, htpb, interface = lc.vert_avg(save_path_ignore)
+        results.append((AP_achieved*100, radius_um, interface))
+        if os.path.exists(temp_png):
+            os.replace(temp_png, final_png)
+        if os.path.exists(temp_xyzr):
+            os.replace(temp_xyzr, final_xyzr)
+        else:
+            print(f"Warning: {temp_xyzr} was not created!")
+    with open(resultsB, "w") as f:
+        f.write("AP_achieved, Avg Radius (um), Interface %\n")  # optional header
+        for item in results:
+            f.write(f"{item[0]}, {item[1]}, {item[2]}\n")
 
 
 if __name__ == "__main__":
     reset()
-    #generateA()
-    #generateB()
-    #generateC()
+    generateA()
+    generateB()
+    generateC()
     generateD()
     print('Success!')
     #gp.plotA()

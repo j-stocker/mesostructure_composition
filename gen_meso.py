@@ -38,7 +38,7 @@ def save_xyzr(circles, filepath, img_size, physical_size):
             rp = r * scale
             f.write(f"{xp:.8e} {yp:.8e} 0.0 {rp:.8e}\n")
 
-def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev, max_attempts, mode, mix=0.5, max_tries=50, interface_width=2e-6): #2 um
+def gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev, max_attempts, mode, mix=0.5, max_tries=200, interface_width=2e-6): #2 um
     '''Generate a 2D microstructure assuming perfect circles, normal distribution
         returns untitled and titled images
         mode: 

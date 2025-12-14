@@ -1,0 +1,2 @@
+AP_achieved, Avg Radius (um), Interface Experimental, Interface from Eq., Eq. Margin of Error
+54.20265644788742, 141.55481246180068, 4.3170928955078125, 4.215646484682962, 2.3498778756975938

@@ -54,7 +54,7 @@ def plot_interface_fit(
         next(f)  # skip header
         for line in f:
             cols = [float(v.strip()) for v in line.split(',')]
-            x_data.append(cols[x_col])
+            x_data.append(cols[x_col]/100)
             y_data.append(cols[y_col])
 
     x_data = np.array(x_data)
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     save_dirC = "./generated_images/bimodal_varying_part_size/"
     save_dirD = "./generated_images/bimodal_varying_AP_ratio/"
 
-    plot_interface_fit(resultsA, save_dirA, x_col=0, y_col=3, xlabel="Radius (µm)", title="Interface vs Radius, Unimodal", fit_order=2, plot_name="interface_fitA.png")
+    plot_interface_fit(resultsA, save_dirA, x_col=0, y_col=3, xlabel="Radius (µm)", title="Interface vs Radius, Unimodal", fit_order=4, plot_name="interface_fitA.png")
     plot_interface_fit(resultsB, save_dirB, x_col=0, y_col=3, xlabel="AP Achieved", title="Interface vs AP Achieved, Unimodal", fit_order=2, plot_name="interface_fitB.png")
     plot_interface_fit(resultsC, save_dirC, x_col=4, y_col=3, xlabel="Radius (µm)", title="Interface vs Radius, Bimodal", fit_order=2, plot_name="interface_fitC.png")
     plot_interface_fit(resultsD, save_dirD, x_col=0, y_col=3, xlabel="AP Achieved", title="Interface vs AP Achieved, Bimodal", fit_order=1, plot_name="interface_fitD.png")

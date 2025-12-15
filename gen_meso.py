@@ -43,7 +43,7 @@ def gen_struct(
     save_path, save_path_untitled, save_path_xyzr,
     img_size, physical_size, physical_mean_radius,
     ap_ratio, rad_dev, max_attempts,
-    mode, mix=0.5, max_tries=80, interface_width=2e-6
+    mode, mix=0.5, max_tries=80, interface_width=2e-6, N_mask=8192
 ):
     """
     Generate a 2D microstructure assuming perfect circles.
@@ -198,9 +198,9 @@ def gen_struct(
 
     circles = best_circles
     total_area = best_total_area
-    #untitled 1024 x 1024 
+    #untitled
     #making the actual figure
-    fig2, ax2 = plt.subplots(figsize=(6, 6), dpi=1024/6) #resolution 1024
+    fig2, ax2 = plt.subplots(figsize=(6, 6), dpi=2000) #high res
     ax2.set_position([0, 0, 1, 1])
     ax2.set_axis_off()
     #boundaries
@@ -217,9 +217,9 @@ def gen_struct(
     #AP circles, red
     for (x, y, r) in circles:
         ax2.add_patch(
-            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size*N_mask), zorder=10)
+            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size*img_size), zorder=10)
         )
-    fig2.savefig(save_path_untitled, dpi=1024/6, bbox_inches=None, pad_inches=0.0)
+    fig2.savefig(save_path_untitled, dpi=2000, bbox_inches=None, pad_inches=0.0)
     plt.close(fig2)
     
     #with title and padding
@@ -240,7 +240,7 @@ def gen_struct(
     #AP circles, red
     for (x, y, r) in circles:
         ax.add_patch(
-            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size*1024), zorder=10)
+            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size*img_size), zorder=10)
         )
     if mode == 1:
         radius_str = f"{physical_mean_radius/1e-6:.1f}"
@@ -253,7 +253,7 @@ def gen_struct(
         f"Placed {len(circles)} grains, achieved AP = {total_area:.3f}"
     )
 
-    fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.02)
+    fig.savefig(save_path, dpi=1024/6, bbox_inches="tight", pad_inches=0.02)
     
     plt.close(fig)
     save_xyzr(circles, save_path_xyzr, img_size, physical_size)

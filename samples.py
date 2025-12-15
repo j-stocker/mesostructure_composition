@@ -9,6 +9,9 @@ import numpy as np
 import glob
 import line_comp as lc
 import gen_plots as gp
+
+from PIL import Image
+Image.MAX_IMAGE_PIXELS = None 
 #clear folders to generate new images
 
 
@@ -73,11 +76,11 @@ resultsE = "./generated_images/test/results.txt"
 
 
 def reset():
-    clear_folder(folderA_png)
-    clear_folder(folderA_xyzr)
+    #clear_folder(folderA_png)
+    #clear_folder(folderA_xyzr)
 
-    clear_folder(folderB_png)
-    clear_folder(folderB_xyzr)
+    #clear_folder(folderB_png)
+    #clear_folder(folderB_xyzr)
 
     #clear_folder(folderC_png)
     #clear_folder(folderC_xyzr)
@@ -85,15 +88,15 @@ def reset():
     #clear_folder(folderD_png)
     #clear_folder(folderD_xyzr)
     
-    #clear_folder(folderE_png)
-    #clear_folder(folderE_xyzr)
+    clear_folder(folderE_png)
+    clear_folder(folderE_xyzr)
 
 
-    os.makedirs(folderA_png, exist_ok=True)
-    os.makedirs(folderA_xyzr, exist_ok=True)
+    #os.makedirs(folderA_png, exist_ok=True)
+    #os.makedirs(folderA_xyzr, exist_ok=True)
 
-    os.makedirs(folderB_png, exist_ok=True)
-    os.makedirs(folderB_xyzr, exist_ok=True)
+    #os.makedirs(folderB_png, exist_ok=True)
+    #os.makedirs(folderB_xyzr, exist_ok=True)
 
     #os.makedirs(folderC_png, exist_ok=True)
     #os.makedirs(folderC_xyzr, exist_ok=True)
@@ -101,8 +104,8 @@ def reset():
     #os.makedirs(folderD_png, exist_ok=True)
     #os.makedirs(folderD_xyzr, exist_ok=True)
     
-    #os.makedirs(folderE_png, exist_ok=True)
-    #os.makedirs(folderE_xyzr, exist_ok=True)
+    os.makedirs(folderE_png, exist_ok=True)
+    os.makedirs(folderE_xyzr, exist_ok=True)
 
     os.makedirs(folder_ignore, exist_ok=True)
 
@@ -281,49 +284,41 @@ def generateD():
 def tester_structures():
     '''Generating random radii/%AP, put into text file, see if it matches with equation'''
     #just going to test with unimodal to start
-    avg_rad_set = np.random.uniform(40e-6, 140e-6, 1)
-    percent_ap = np.random.uniform(0.4, 0.6, 1)
+    radius_m = np.random.uniform(40e-6, 140e-6, 2)
+    percent_ap = np.random.uniform(0.4, 0.6, 2)
     results = []
     MoE = []
 
     for i, AP_target in enumerate(percent_ap):
+
+        R_m = radius_m[i]
+        R = R_m * 1e6
+
         temp_png = os.path.join(folderE_png, f"temp_{i}.png")
         temp_xyzr = os.path.join(folderE_xyzr, f"temp_{i}.xyzr")
-
+        
         _, _, AP_achieved, _ = gm.gen_struct(
             temp_png, save_path_ignore, temp_xyzr,
-            1, 5e-3, avg_rad_set[i], AP_target,
-            std_dev_uni, max_attempts, mode=1, max_tries=1
+            1, 1e-3, R_m, AP_target,
+            std_dev_uni, max_attempts=100000, mode=1, max_tries=1
         )
+        
 
         AP_str = str(int(AP_achieved * 10000))
-        radius_um = int(avg_rad_set[i] * 1e6)
+        radius_um = int(R_m * 1e6)
         final_png = os.path.join(folderE_png, f"uni_AP{AP_str}_R{radius_um}um.png")
         final_xyzr = os.path.join(folderE_xyzr, f"uni_AP{AP_str}_R{radius_um}um.xyzr")
         ap, htpb, interface = lc.vert_avg_fast(save_path_ignore)
         #I equation
-        # --- compute effective radius from xyzr ---
-        radii = []
-        with open(temp_xyzr, "r") as f:
-            for line in f:
-                r = float(line.strip().split()[3])  # meters
-                radii.append(r)
 
-        radii = np.array(radii)
-
-        # effective radius that matches σ = 0.4 fit
-        R_eff = np.mean(radii**2) / np.mean(radii)   # meters
-        R_eff_um = R_eff * 1e6                        # microns
-
-        I_theory = 6.238e-4*R_eff_um**2 - 0.1152*R_eff_um + 10.71*AP_achieved**2 - 2.851*AP_achieved + 6.422 
-        #I_theory = 7.663e-3*radius_um**2 - 0.8833*radius_um + 25.56*AP_achieved**2 - 4.616*AP_achieved + 18.627
-        #
-        #I_theory = (2*I_theory1 + I_theory2)/3
+        I_theory = 1.652e-7 * R**4 - 8.324e-5 * R**3 \
+            + 1.598e-2 * R**2 - 1.379 * R \
+                + 27.61 * AP_achieved **2 - 3.989 * AP_achieved + 46.6469
         
         #equation's margin of error
         MoE.append(np.abs(I_theory - interface)/interface * 100)
         
-        results.append((AP_achieved*100, R_eff_um, interface, I_theory, MoE[i]))
+        results.append((AP_achieved*100, radius_um, interface, I_theory, MoE[i]))
         if os.path.exists(temp_png):
             os.replace(temp_png, final_png)
         if os.path.exists(temp_xyzr):
@@ -343,5 +338,6 @@ def tester_structures():
 
 if __name__ == "__main__":
     reset()
-    generateA()
-    generateB()
+    #generateA()
+    #generateB()
+    tester_structures()

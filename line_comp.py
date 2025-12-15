@@ -50,7 +50,25 @@ def draw_line(save_path, column_index, copy_path):
 
 #find average composition of a vertical line by looping over whole thing
 #probably will want to trim off edges to get to the middle, so we don't have areas where AP = 0
+def vert_avg_fast(save_path):
+    img = Image.open(save_path).convert("RGB")
+    arr = np.array(img)
+    tol = 10
+    # Red = AP
+    is_red = np.all(np.abs(arr - [255, 0, 0]) <= tol, axis=2)
+    # Blue = HTPB
+    is_blue = np.all(np.abs(arr - [0, 0, 255]) <= tol, axis=2)
+    # Anything else = interface
+    is_purple = ~(is_red | is_blue)
 
+    
+    total_pixels = arr.shape[0] * arr.shape[1]
+    
+    ap = np.sum(is_red) / total_pixels * 100
+    htpb = np.sum(is_blue) / total_pixels * 100
+    interface = np.sum(is_purple) / total_pixels * 100
+    
+    return ap, htpb, interface
 
 def vert_avg(save_path):
     img = Image.open(save_path).convert("RGB")

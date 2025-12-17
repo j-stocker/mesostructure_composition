@@ -43,7 +43,7 @@ def gen_struct(
     save_path, save_path_untitled, save_path_xyzr,
     img_size, physical_size, physical_mean_radius,
     ap_ratio, rad_dev, max_attempts,
-    mode, mix=0.5, max_tries=80, interface_width=2e-6, N_mask=8192
+    mode, mix=0.5, max_tries=80, interface_width=2e-6, N_mask=8192, dpi_highres=1000
 ):
     """
     Generate a 2D microstructure assuming perfect circles.
@@ -153,7 +153,7 @@ def gen_struct(
 
             valid = True
             for (cx, cy, cr) in nearby_candidates(x, y, circles):
-                tol = 1e-3 * min(r, cr)   # 0.1% of smaller radius
+                tol = 1e-4 * min(r, cr)   # 0.01% of smaller radius
                 #allow a little overlap
                 if (cx - x)**2 + (cy - y)**2 < (cr + r - tol)**2:
                     valid = False
@@ -200,7 +200,7 @@ def gen_struct(
     total_area = best_total_area
     #untitled
     #making the actual figure
-    fig2, ax2 = plt.subplots(figsize=(6, 6), dpi=2000) #high res
+    fig2, ax2 = plt.subplots(figsize=(6, 6), dpi=dpi_highres) #high res
     ax2.set_position([0, 0, 1, 1])
     ax2.set_axis_off()
     #boundaries
@@ -208,7 +208,7 @@ def gen_struct(
     ax2.set_ylim(0, img_size)
     ax2.set_aspect("equal", "box")
     ax2.axis("off")
-    
+    antialiased=False
     #HTPB background, blue
     ax2.add_patch(
         plt.Rectangle((0, 0), img_size, img_size, facecolor='#0000FF', zorder=0) 
@@ -217,9 +217,12 @@ def gen_struct(
     #AP circles, red
     for (x, y, r) in circles:
         ax2.add_patch(
-            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size*img_size), zorder=10)
+            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size/img_size)*72, zorder=5)
         )
-    fig2.savefig(save_path_untitled, dpi=2000, bbox_inches=None, pad_inches=0.0)
+        ax2.add_patch(
+            Circle((x, y), r, facecolor='none', edgecolor='#FFFFFF', linewidth=72/dpi_highres, zorder=10)
+        )
+    fig2.savefig(save_path_untitled, dpi=dpi_highres, bbox_inches=None, pad_inches=0.0)
     plt.close(fig2)
     
     #with title and padding
@@ -240,7 +243,10 @@ def gen_struct(
     #AP circles, red
     for (x, y, r) in circles:
         ax.add_patch(
-            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size*img_size), zorder=10)
+            Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080', linewidth=interface_width/(physical_size/img_size)*72, zorder=5)
+        )
+        ax.add_patch(
+            Circle((x, y), r, facecolor='none', edgecolor='#FFFFFF', linewidth=1, zorder=10)
         )
     if mode == 1:
         radius_str = f"{physical_mean_radius/1e-6:.1f}"

@@ -29,9 +29,9 @@ def clear_folder(folder_path):
 
 
 # Parameters
-std_dev_uni = 0.2
-AP_vol_50A = 0.5
-avg_rad_50A = np.linspace(40e-6, 140e-6, 200)
+std_dev_uni = 0.9
+AP_vol_50A = 0.9
+avg_rad_50A = np.linspace(120e-6, 120e-6, 10)
 
 avg_rad_50B = 70e-6  # fixed particle size
 AP_vol_50B = np.linspace(0.35, 0.65, 200)  # varying AP
@@ -46,7 +46,7 @@ AP_bi_var = np.linspace(0.40, 0.55, 3)
 mix_bi = 1/21 #coarse:fine
 
 img_size = 1
-physical_size = 1e-2
+physical_size = 0.0012 #1200 um
 max_attempts = 100000
 
 interface_thickness = 2e-6 #2 um
@@ -77,8 +77,8 @@ resultsE = "./generated_images/test/results.txt"
 
 
 def reset():
-    #clear_folder(folderA_png)
-    #clear_folder(folderA_xyzr)
+    clear_folder(folderA_png)
+    clear_folder(folderA_xyzr)
 
     #clear_folder(folderB_png)
     #clear_folder(folderB_xyzr)
@@ -89,12 +89,12 @@ def reset():
     #clear_folder(folderD_png)
     #clear_folder(folderD_xyzr)
     
-    clear_folder(folderE_png)
-    clear_folder(folderE_xyzr)
+    #clear_folder(folderE_png)
+    #clear_folder(folderE_xyzr)
 
 
-    #os.makedirs(folderA_png, exist_ok=True)
-    #os.makedirs(folderA_xyzr, exist_ok=True)
+    os.makedirs(folderA_png, exist_ok=True)
+    os.makedirs(folderA_xyzr, exist_ok=True)
 
     #os.makedirs(folderB_png, exist_ok=True)
     #os.makedirs(folderB_xyzr, exist_ok=True)
@@ -105,8 +105,8 @@ def reset():
     #os.makedirs(folderD_png, exist_ok=True)
     #os.makedirs(folderD_xyzr, exist_ok=True)
     
-    os.makedirs(folderE_png, exist_ok=True)
-    os.makedirs(folderE_xyzr, exist_ok=True)
+    #os.makedirs(folderE_png, exist_ok=True)
+    #os.makedirs(folderE_xyzr, exist_ok=True)
 
     os.makedirs(folder_ignore, exist_ok=True)
 
@@ -133,9 +133,9 @@ def generateA():
         )
 
         AP_str = str(int(AP_achieved * 10000))  # 4-digit AP fraction without leading 0
-        radius_um = int(radius * 1e7) #3 digit radius
-        final_png = os.path.join(folderA_png, f"uni_R{radius_um}um_AP{AP_str}.png")
-        final_xyzr = os.path.join(folderA_xyzr, f"uni_R{radius_um}um_AP{AP_str}.xyzr")
+        radius_um = int(radius * 1e6) #3 digit radius
+        final_png = os.path.join(folderA_png, f"uni_R{radius_um}um_AP{AP_str}_{i+1}.png")
+        final_xyzr = os.path.join(folderA_xyzr, f"uni_R{radius_um}um_AP{AP_str}_{i+1}.xyzr")
         ap, htpb, interface = lc.vert_avg_fast(save_path_ignore)
         results.append((radius_um, ap, htpb, interface))
         if os.path.exists(temp_png):
@@ -150,8 +150,6 @@ def generateA():
             f.write(f"{item[0]}, {item[1]}, {item[2]}, {item[3]}\n")
 
 
-
-            
 def generateB():
     results = []
     # --- B: Unimodal, varying AP fraction ---
@@ -543,13 +541,13 @@ def read_resultsE():
             eq.append(float(parts[3]))
     exp_array = np.array(exp)
     eq_array = np.array(eq)
-    print(np.mean(exp_array) - np.mean(eq_array))
+    print(abs(np.mean(exp_array) - np.mean(eq_array)))
 
 
 
 if __name__ == "__main__":
-    #reset()
-    #generateA()
+    reset()
+    generateA()
     #generateB()
     #tester_structures()
-    read_resultsE()
+    #read_resultsE()

@@ -615,15 +615,36 @@ def gen_struct_combined(
     return save_path, save_path_untitled, total_ap_area, AP_xyzr, void_xyzr
 
 
-
-
+def mass_frac_to_vol_frac(m_Gr, m_Po_or_Ho, void_fraction, m_HTPB=0.2, rho_AP=1.95, rho_HTPB=0.93):
+    '''get volume fractions for mixtures'''
+    
+    #convert to volumes for each component
+    V_Gr = m_Gr/rho_AP
+    V_Po_or_Ho = m_Po_or_Ho/rho_AP
+    
+    V_AP = V_Gr + V_Po_or_Ho
+    V_AP = V_AP 
+    
+    V_HTPB = m_HTPB/rho_HTPB
+    total_vol = (V_AP + V_HTPB) / (1 - void_fraction)
+    total_rho = 1 / total_vol
+    
+    phi_Gr = V_Gr / total_vol
+    phi_Po_or_Ho = V_Po_or_Ho / total_vol
+    phi_HTPB = V_HTPB / total_vol
+    phi_void = 1 - (phi_Gr + phi_Po_or_Ho + phi_HTPB)
+    
+    
+    print(f"{phi_Gr*100:.4f}, {phi_Po_or_Ho*100:.4f}, {phi_HTPB*100:.4f}, {total_rho:.2f}")
+    return total_rho
 
 
 
 if __name__ == "__main__":
     #save_path, save_path_untitled, _, _ = gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev_bi, max_attempts, 2, mix)
     #print(f"\nSaved AP–HTPB microstructure images to: {save_path} and {save_path_untitled}")
-    gen_struct_combined(
-        'test.png', 'test_untitled.png', 'test_AP.xyzr', 'test_voids.xyzr', 
-        1, 0.0012, 0.8, 10000, 0.3, 0.0, 0.3, 0.003
-    ) #solid, hollow, porous
+    #gen_struct_combined(
+    #    'test.png', 'test_untitled.png', 'test_AP.xyzr', 'test_voids.xyzr', 
+    #    1, 0.0012, 0.8, 10000, 0.3, 0.0, 0.3, 0.003
+    #) #solid, hollow, porous
+    mass_frac_to_vol_frac(0.8, 0.0, 0.0)

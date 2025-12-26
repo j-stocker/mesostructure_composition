@@ -450,7 +450,7 @@ def tester_structures():
     '''Generating random radii/%AP, put into text file, see if it matches with equation'''
     # just going to test with unimodal to start
     radius_m = np.random.uniform(0.000025, 0.0005, 100)
-    percent_ap = np.random.uniform(0.45, 0.65, 100)
+    percent_ap = np.random.uniform(0.55, 0.65, 10)
     results = []
     MoE = []
     factor = []
@@ -546,8 +546,8 @@ def read_resultsE():
 
 
 if __name__ == "__main__":
-    reset()
-    generateA()
+    #reset()
+    #generateA()
     #generateB()
-    #tester_structures()
+    tester_structures()
     #read_resultsE()

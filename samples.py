@@ -46,7 +46,7 @@ AP_bi_var = np.linspace(0.40, 0.55, 3)
 mix_bi = 1/21 #coarse:fine
 
 img_size = 1
-physical_size = 0.0012 #1200 um
+physical_size = 0.0012 #1200 um 1200e-6
 max_attempts = 100000
 
 interface_thickness = 2e-6 #2 um
@@ -450,7 +450,7 @@ def tester_structures():
     '''Generating random radii/%AP, put into text file, see if it matches with equation'''
     # just going to test with unimodal to start
     radius_m = np.random.uniform(0.000025, 0.0005, 100)
-    percent_ap = np.random.uniform(0.45, 0.65, 100)
+    percent_ap = np.random.uniform(0.55, 0.65, 10)
     results = []
     MoE = []
     factor = []
@@ -544,10 +544,84 @@ def read_resultsE():
     print(abs(np.mean(exp_array) - np.mean(eq_array)))
 
 
+def generate_combined(vol_perc_solid, vol_perc_porous, vol_perc_hollow, vf, foldername, n_images, physical_size=0.0012):
+    
+    # --- Combined mesostructure: varying particle size ---
+    for i in range(n_images):  # use the same radius array as before
+        
+        temp_png = os.path.join(folderA_png, f"temp_{i}.png")
+        temp_xyzr_solid = os.path.join(folderA_xyzr, f"temp_solid_{i}.xyzr")
+        temp_xyzr_void = os.path.join(folderA_xyzr, f"temp_void_{i}.xyzr")
+        save_path_trimmed = os.path.join(folderA_xyzr, f"set{foldername}_{i+1}_untitled.png")
+            
+        if i != n_images-1:
+            
+            _ = gm.gen_struct_combined_no_img(
+                save_path=temp_png,
+                save_path_untitled=save_path_ignore,
+                AP_xyzr=temp_xyzr_solid,
+                void_xyzr=temp_xyzr_void,
+                img_size=img_size,
+                physical_size=physical_size,
+                rad_dev=0.1,
+                max_attempts=max_attempts,
+                vol_percent_solid=vol_perc_solid,
+                vol_percent_hollow=vol_perc_hollow,
+                vol_percent_porous=vol_perc_porous,
+                void_fraction=vf,
+                max_tries=100
+            )
+        
+        else:
+            _ = gm.gen_struct_combined(
+            save_path=temp_png,
+            save_path_untitled=save_path_trimmed,
+            AP_xyzr=temp_xyzr_solid,
+            void_xyzr=temp_xyzr_void,
+            img_size=img_size,
+            physical_size=physical_size,
+            rad_dev=0.1,
+            max_attempts=max_attempts,
+            vol_percent_solid=vol_perc_solid,
+            vol_percent_hollow=vol_perc_hollow,
+            vol_percent_porous=vol_perc_porous,
+            void_fraction=vf,
+            max_tries=100
+            )
+            
+        print(f"xyzr {i+1} created.")
+        # Create final filenames
+        #AP_str = str(int(AP_achieved * 10000))  # 4-digit AP fraction
+        #radius_um = int(radius * 1e6)           # radius in microns
+        final_png = os.path.join(folderA_png, f"{foldername}_{i+1}_titled.png")
+        final_xyzr_solid = os.path.join(folderA_xyzr, f"{foldername}_{i+1}_AP.xyzr")
+        final_xyzr_void = os.path.join(folderA_xyzr, f"{foldername}_{i+1}_void.xyzr")
+        
+
+        # Move temporary files to final filenames
+        if os.path.exists(temp_png):
+            os.replace(temp_png, final_png)
+            print(f"Image {i+1} created.")
+        if os.path.exists(temp_xyzr_solid):
+            os.replace(temp_xyzr_solid, final_xyzr_solid)
+        else:
+            print(f"Warning: {temp_xyzr_solid} was not created!")
+        if os.path.exists(temp_xyzr_void):
+            os.replace(temp_xyzr_void, final_xyzr_void)
+        else:
+            print(f"Warning: {temp_xyzr_void} was not created!")
+        
+    # Save results
+    #with open(resultsA, "w") as f:
+        #f.write("radius in um, AP_vert, HTPB_vert, Interface_vert\n")
+        #for item in results:
+            #f.write(f"{item[0]}, {item[1]}, {item[2]}, {item[3]}\n")
+
 
 if __name__ == "__main__":
-    reset()
-    generateA()
-    #generateB()
-    #tester_structures()
-    #read_resultsE()
+    #reset()
+    
+    #generate_combined(0.296222, 0, 0.296222, 0.097, "B3", 1)
+
+    generate_combined(0, 0, 0.65, 0.058, "hol_ex", 1, 0.0005)
+    

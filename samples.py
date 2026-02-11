@@ -553,7 +553,7 @@ def generate_combined(vol_perc_solid, vol_perc_porous, vol_perc_hollow, vf, fold
         temp_xyzr_solid = os.path.join(folderA_xyzr, f"temp_solid_{i}.xyzr")
         temp_xyzr_void = os.path.join(folderA_xyzr, f"temp_void_{i}.xyzr")
         save_path_trimmed = os.path.join(folderA_xyzr, f"set{foldername}_{i+1}_untitled.png")
-            
+         
         if i != n_images-1:
             
             _ = gm.gen_struct_combined_no_img(
@@ -564,12 +564,12 @@ def generate_combined(vol_perc_solid, vol_perc_porous, vol_perc_hollow, vf, fold
                 img_size=img_size,
                 physical_size=physical_size,
                 rad_dev=0.1,
-                max_attempts=max_attempts,
+                max_attempts=200000,
                 vol_percent_solid=vol_perc_solid,
                 vol_percent_hollow=vol_perc_hollow,
                 vol_percent_porous=vol_perc_porous,
                 void_fraction=vf,
-                max_tries=100
+                max_tries=1, mean_rad_hollow=4.5e-6
             )
         
         else:
@@ -580,13 +580,13 @@ def generate_combined(vol_perc_solid, vol_perc_porous, vol_perc_hollow, vf, fold
             void_xyzr=temp_xyzr_void,
             img_size=img_size,
             physical_size=physical_size,
-            rad_dev=0.1,
-            max_attempts=max_attempts,
+            rad_dev=0.2,
+            max_attempts=200000,
             vol_percent_solid=vol_perc_solid,
             vol_percent_hollow=vol_perc_hollow,
             vol_percent_porous=vol_perc_porous,
             void_fraction=vf,
-            max_tries=100
+            max_tries=100, 
             )
             
         print(f"xyzr {i+1} created.")
@@ -616,12 +616,53 @@ def generate_combined(vol_perc_solid, vol_perc_porous, vol_perc_hollow, vf, fold
         #f.write("radius in um, AP_vert, HTPB_vert, Interface_vert\n")
         #for item in results:
             #f.write(f"{item[0]}, {item[1]}, {item[2]}, {item[3]}\n")
+            
+            
+def mass_frac_to_vol_frac(
+    m_Gr,
+    m_Po_or_Ho,
+    void_fraction,
+    m_HTPB=0.2,
+    rho_AP=1.95,
+    rho_HTPB=0.93
+):
+    # get volume fractions for mixtures
+
+    # convert to volumes for each component
+    V_Gr = m_Gr / rho_AP
+    V_Po_or_Ho = m_Po_or_Ho / rho_AP
+
+    V_AP = V_Gr + V_Po_or_Ho
+    V_AP = V_AP
+
+    V_HTPB = m_HTPB / rho_HTPB
+
+    total_vol = (V_AP + V_HTPB) / (1 - void_fraction)
+    total_rho = 1 / total_vol
+
+    phi_Gr = V_Gr / total_vol
+    phi_Po_or_Ho = V_Po_or_Ho / total_vol
+    phi_HTPB = V_HTPB / total_vol
+    phi_void = 1 - (phi_Gr + phi_Po_or_Ho + phi_HTPB)
+
+    print(
+        f"{phi_Gr*100:.4f}, "
+        f"{phi_Po_or_Ho*100:.4f}, "
+        f"{phi_HTPB*100:.4f}, "
+        f"{total_rho:.2f}"
+    )
+
+    return total_rho
 
 
 if __name__ == "__main__":
     #reset()
     
     #generate_combined(0.296222, 0, 0.296222, 0.097, "B3", 1)
-
-    generate_combined(0, 0, 0.65, 0.058, "hol_ex", 1, 0.0005)
+    #perc_vol = 
+    #mass_frac_to_vol_frac(00, 0.8, 0.033))
+    generate_combined(0, 0.65, 0, 0.08, "porous_ex",1, 1e-4)
+    generate_combined(0, 0, 0.65, 0.08, "hollow_ex",1, 1e-4)
+    #generate_combined(0, 0.3, 0, 0.033, "porous_80_by_weight", 1, 5e-4)
+    #generate_combined(0, 0.0, 0.5, 0.024, "porous_80", 1, 0.0002)
     

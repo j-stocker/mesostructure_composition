@@ -1366,7 +1366,7 @@ def gen_struct_combined_no_img(
         if porous_area + A > vol_percent_porous:
             continue
 
-        for _ in range(100):
+        for _ in range(200):
             x = rng.uniform(r, img_size-r)
             y = rng.uniform(r, img_size-r)
             if any((x-cx)**2 + (y-cy)**2 < (r+cr)**2 for cx,cy,cr in nearby(x,y,circles)):
@@ -1540,7 +1540,9 @@ def gen_struct_combined(
     mu = math.log(img_r(mean_rad_solid))
     sigma = rad_dev
 
-    for _ in range(max_attempts):
+    for attempt in range(max_attempts):
+        if attempt % 100 == 0 and attempt != 0:
+            print(f"Reached solid attempt {attempt}")
         if solid_area >= vol_percent_solid:
             break
 
@@ -1567,7 +1569,9 @@ def gen_struct_combined(
     print("\nPlacing hollow grains...")
     mu = math.log(img_r(mean_rad_hollow))
 
-    for _ in range(max_attempts):
+    for attempt in range(max_attempts):
+        if attempt % 100 == 0 and attempt != 0:
+            print(f"Reached hollow attempt {attempt}, hollow area so far: {hollow_area:.4f}")
         if hollow_area >= vol_percent_hollow:
             break
 
@@ -1575,14 +1579,21 @@ def gen_struct_combined(
         A = math.pi * r**2 / total_domain_area
         if hollow_area + A > vol_percent_hollow:
             continue
-
-        for _ in range(100):
-            x = rng.uniform(r, img_size-r)
-            y = rng.uniform(r, img_size-r)
+        if hollow_area < 0.6 * vol_percent_hollow:
+            MAX_POSITION_TRIES = 4
+        else:
+            MAX_POSITION_TRIES = 30
+        for _ in range(MAX_POSITION_TRIES):
+            #x = rng.uniform(r, img_size-r)
+            #y = rng.uniform(r, img_size-r)
+            #SMALL IMAGE ONLY
+            x = rng.uniform(-margin + r, img_size + margin - r)
+            y = rng.uniform(-margin + r, img_size + margin - r)
+            
             if not any((x-cx)**2 + (y-cy)**2 < (r+cr)**2 for cx,cy,cr in nearby(x,y,circles)):
                 #convert void fraction ov erall to that of hollow particles
                 f_void_hollow = void_fraction * total_domain_area / (vol_percent_hollow * total_domain_area)
-              
+            
 
                 particle_void = f_void_hollow * math.pi * r**2
                 particle_void = min(particle_void, target_void_area - current_void_area)
@@ -1607,7 +1618,10 @@ def gen_struct_combined(
     print("\nPlacing porous grains...")
     mu = math.log(img_r(mean_rad_porous))
 
-    for _ in range(max_attempts):
+    for attempt in range(max_attempts):
+        
+        if attempt % 100 == 0 and attempt != 0:
+            print(f"Reached porous attempt {attempt}, porous area so far: {porous_area:.4f}")
         if porous_area >= vol_percent_porous:
             break
 
@@ -1616,9 +1630,17 @@ def gen_struct_combined(
         if porous_area + A > vol_percent_porous:
             continue
 
-        for _ in range(100):
-            x = rng.uniform(r, img_size-r)
-            y = rng.uniform(r, img_size-r)
+        if porous_area < 0.6 * vol_percent_porous:
+            MAX_POSITION_TRIES = 4
+        else:
+            MAX_POSITION_TRIES = 40
+        
+        for _ in range(MAX_POSITION_TRIES):
+            #x = rng.uniform(r, img_size-r)
+            #y = rng.uniform(r, img_size-r)
+            #SMALL IMAGES ONLY
+            x = rng.uniform(-margin + r, img_size + margin - r)
+            y = rng.uniform(-margin + r, img_size + margin - r)
             if any((x-cx)**2 + (y-cy)**2 < (r+cr)**2 for cx,cy,cr in nearby(x,y,circles)):
                 continue
 
@@ -1626,7 +1648,7 @@ def gen_struct_combined(
             target_pore_area = phi_pore * np.pi * r**2
             target_pore_area = min(target_pore_area, target_void_area - current_void_area)
 
-            for regen in range(10):
+            for regen in range(5):
                 pore_radii = pore_radii_2_to_5(target_pore_area, r, rng)
                 placed = place_pores_for_particle(x, y, r, pore_radii, voids)
                 if placed is not None:
@@ -1642,6 +1664,7 @@ def gen_struct_combined(
 
             #print(f"  Porous grain r={r*physical_size/img_size*1e6:.1f} µm | pores={len(pore_radii)}")
             break
+        
 
     # -----------------------------
     # FINAL SUMMARY
@@ -1650,12 +1673,15 @@ def gen_struct_combined(
     print("FINAL RESULTS")
     print(f"{'='*60}")
     print(f"Total grains: {len(circles)}")
-    print(f"Total voids:  {len(voids)}")
+    print(f"Total AP area fraction: {(solid_area + hollow_area + porous_area):.4f}")
+    print(f"Solid area fraction: {solid_area:.4f}")
     print(f"Void fraction: {current_void_area/total_domain_area:.4f}")
     print(f"Target:        {void_fraction:.4f}")
     print(f"Error:         {abs(current_void_area/total_domain_area - void_fraction):.2e}")
     print(f"{'='*60}\n")
-
+    
+    save_xyzr(circles, AP_xyzr, img_size, physical_size)
+    save_xyzr(voids, void_xyzr, img_size, physical_size)
     # -----------------------------
     # Plotting
     # -----------------------------
@@ -1719,22 +1745,407 @@ def gen_struct_combined(
     # -----------------------------
     # Save xyzr
     # -----------------------------
-    save_xyzr(circles, AP_xyzr, img_size, physical_size)
-    save_xyzr(voids, void_xyzr, img_size, physical_size)
+    
 
     return current_void_area / total_domain_area
 
 
-
-if __name__ == "__main__":
-    gen_struct_combined(
-        'test.png', 'test_untitled.png', 'test_AP.xyzr', 'test_voids.xyzr',
-        1, 0.0012, 0.8, 10000, 0.3, 0.0, 0.3, 0.003
-    )
+from mpl_toolkits import mplot3d 
 
 
+def gen_struct_combined3D(
+    save_path, save_path_untitled, AP_xyzr, void_xyzr,
+    img_size, physical_size,
+    rad_dev, max_attempts,
+    vol_percent_solid, vol_percent_hollow, vol_percent_porous, void_fraction,
+    mean_rad_solid=120e-6, mean_rad_hollow=2e-6, mean_rad_porous=4.5e-6,
+    max_tries=1, interface_width=1e-7,
+    N_mask_base=1024, dpi_highres=100
+):
+
+    rng = np.random.default_rng()
+    margin = 0.07
+
+    total_domain_volume = img_size ** 3
+    target_void_volume = void_fraction * total_domain_volume
+    current_void_volume = 0.0
+
+    porosity_min = 0.05
+    porosity_max = 0.25
+
+    print(f"\n{'='*60}")
+    print("TARGET PARAMETERS")
+    print(f"{'='*60}")
+    print(f"Target void fraction (global): {void_fraction:.4f}")
+    print(f"Target void volume (px³): {target_void_volume:.2e}")
+    print(f"{'='*60}\n")
+
+    def img_r(mu):
+        return mu / physical_size * img_size
+
+    def sample_radius(mu, sigma):
+        return rng.lognormal(mu, sigma)
+
+    def pore_radii_2_to_5(target_volume, r_particle, rng):
+        n_pores = rng.integers(2, 6)
+        alpha = np.ones(n_pores)
+        alpha[0] = 3.0
+        volumes = rng.dirichlet(alpha) * target_volume
+        return [min((3*v/(4*np.pi))**(1/3), 0.45 * r_particle) for v in volumes]
+
+    cell_size = img_r(mean_rad_solid) * 4
+    n_cells = max(1, int(math.ceil(img_size / cell_size)))
+
+    grid = [[[[] for _ in range(n_cells)]
+                for __ in range(n_cells)]
+                for ___ in range(n_cells)]
+
+    def cell_coords(x, y, z):
+        i = int(x // cell_size)
+        j = int(y // cell_size)
+        k = int(z // cell_size)
+
+        # clamp to valid range
+        i = max(0, min(n_cells - 1, i))
+        j = max(0, min(n_cells - 1, j))
+        k = max(0, min(n_cells - 1, k))
+
+        return i, j, k
 
 
+    def nearby(x, y, z, spheres):
+        cx, cy, cz = cell_coords(x, y, z)
+        for i in range(max(0,cx-1), min(n_cells,cx+2)):
+            for j in range(max(0,cy-1), min(n_cells,cy+2)):
+                for k in range(max(0,cz-1), min(n_cells,cz+2)):
+                    for idx in grid[i][j][k]:
+                        yield spheres[idx]
+
+    def place_pores_for_particle(
+        x0, y0, z0, r_particle,
+        pore_radii,
+        existing_voids,
+        max_attempts=500,
+        overlap_tol=0.01
+    ):
+
+        placed_pores = []
+
+        for rp in pore_radii:
+            success = False
+
+            for _ in range(max_attempts):
+
+                theta = rng.uniform(0, 2*np.pi)
+                phi   = rng.uniform(0, np.pi)
+                rad   = rng.uniform(0, r_particle - rp)
+
+                xp = x0 + rad * np.sin(phi) * np.cos(theta)
+                yp = y0 + rad * np.sin(phi) * np.sin(theta)
+                zp = z0 + rad * np.cos(phi)
+
+                if np.sqrt((xp-x0)**2 + (yp-y0)**2 + (zp-z0)**2) + rp > r_particle:
+                    continue
+
+                if any(np.sqrt((xp-px)**2 + (yp-py)**2 + (zp-pz)**2)
+                        < (1-overlap_tol)*(rp + pr)
+                        for (px, py, pz, pr) in placed_pores):
+                    continue
+
+                if any(np.sqrt((xp-vx)**2 + (yp-vy)**2 + (zp-vz)**2)
+                        < (1-overlap_tol)*(rp + vr)
+                        for (vx, vy, vz, vr) in existing_voids):
+                    continue
+
+                placed_pores.append((xp, yp, zp, rp))
+                success = True
+                break
+
+            if not success:
+                return None
+
+        return placed_pores
+
+    def save_xyzr(circles, filename, img_size, physical_size):
+
+        scale = physical_size / img_size
+
+        with open(filename, "w") as f:
+            for (x, y, z, r) in circles:
+                f.write(f"{x*scale} {y*scale} {z*scale} {r*scale}\n")
+
+    
+    spheres = []
+    voids = []
+
+    solid_volume = hollow_volume = porous_volume = 0.0
+
+    # -----------------------------
+    # SOLID GRAINS
+    # -----------------------------
+    print("Placing solid grains...")
+    mu = math.log(img_r(mean_rad_solid))
+    sigma = rad_dev
+
+    solid_radii = [sample_radius(mu, sigma) for _ in range(max_attempts)]
+    solid_radii.sort(reverse=True)
+
+    for attempt, r in enumerate(solid_radii):
+
+        if attempt % 100 == 0 and attempt != 0:
+            print(f"Reached solid attempt {attempt}")
+
+        if solid_volume >= 0.999*vol_percent_solid:
+            break
+
+        V = (4/3)*math.pi*r**3 / total_domain_volume
+        if solid_volume + V > vol_percent_solid:
+            continue
+
+        for _ in range(100):
+            x = rng.uniform(-margin + r, img_size + margin - r)
+            y = rng.uniform(-margin + r, img_size + margin - r)
+            z = rng.uniform(-margin + r, img_size + margin - r)
+
+            if all((x-cx)**2+(y-cy)**2+(z-cz)**2 >= (r+cr)**2
+                    for cx,cy,cz,cr in nearby(x,y,z,spheres)):
+
+                spheres.append((x,y,z,r))
+                i,j,k = cell_coords(x,y,z)
+                grid[i][j][k].append(len(spheres)-1)
+                solid_volume += V
+                break
+
+    print(f"Solid volume fraction: {solid_volume:.4f}")
+
+    # -----------------------------
+    # HOLLOW GRAINS
+    # -----------------------------
+    print("Placing hollow grains...")
+    mu = math.log(img_r(mean_rad_hollow))
+
+    hollow_radii = [sample_radius(mu, sigma) for _ in range(max_attempts)]
+    hollow_radii.sort(reverse=True)
+
+    for r in hollow_radii:
+
+        if hollow_volume >= 0.999*vol_percent_hollow:
+            break
+
+        V = (4/3)*math.pi*r**3 / total_domain_volume
+        if hollow_volume + V > vol_percent_hollow:
+            continue
+
+        for _ in range(30):
+            x = rng.uniform(-margin+r, img_size+margin-r)
+            y = rng.uniform(-margin+r, img_size+margin-r)
+            z = rng.uniform(-margin+r, img_size+margin-r)
+
+            if not any((x-cx)**2+(y-cy)**2+(z-cz)**2 < (r+cr)**2
+                    for cx,cy,cz,cr in nearby(x,y,z,spheres)):
+
+                f_void_hollow = void_fraction / vol_percent_hollow
+                particle_void_volume = f_void_hollow * (4/3)*math.pi*r**3
+                particle_void_volume = min(
+                    particle_void_volume,
+                    target_void_volume-current_void_volume
+                )
+
+                rv = r * (f_void_hollow)**(1/3)
+
+                spheres.append((x,y,z,r))
+                voids.append((x,y,z,rv))
+
+                i,j,k = cell_coords(x,y,z)
+                grid[i][j][k].append(len(spheres)-1)
+
+                hollow_volume += V
+                current_void_volume += particle_void_volume
+                break
+
+    print(f"Hollow volume fraction: {hollow_volume:.4f}")
+    print(f"Void fraction so far: {current_void_volume/total_domain_volume:.4f}")
+
+    # -----------------------------
+    # POROUS GRAINS
+    # -----------------------------
+    print("Placing porous grains...")
+    mu = math.log(img_r(mean_rad_porous))
+
+    porous_radii = [sample_radius(mu, sigma) for _ in range(max_attempts)]
+    porous_radii.sort(reverse=True)
+
+    for attempt, r in enumerate(porous_radii):
+
+        if attempt % 100 == 0 and attempt != 0:
+            print(f"Reached porous attempt {attempt}, porous volume so far: {porous_volume:.4f}")
+
+        if porous_volume >= 0.999*vol_percent_porous:
+            break
+
+        V = (4/3)*math.pi*r**3 / total_domain_volume
+        if porous_volume + V > vol_percent_porous:
+            continue
+
+        for _ in range(40):
+            x = rng.uniform(-margin+r, img_size+margin-r)
+            y = rng.uniform(-margin+r, img_size+margin-r)
+            z = rng.uniform(-margin+r, img_size+margin-r)
+
+            if any((x-cx)**2+(y-cy)**2+(z-cz)**2 < (r+cr)**2
+                    for cx,cy,cz,cr in nearby(x,y,z,spheres)):
+                continue
+
+            if void_fraction > 0:
+
+                phi_pore = rng.uniform(porosity_min, porosity_max)
+                target_pore_volume = phi_pore * (4/3)*np.pi*r**3
+                target_pore_volume = min(
+                    target_pore_volume,
+                    target_void_volume - current_void_volume
+                )
+
+                for regen in range(5):
+                    pore_radii = pore_radii_2_to_5(target_pore_volume, r, rng)
+                    placed = place_pores_for_particle(x, y, z, r, pore_radii, voids)
+                    if placed is not None:
+                        voids.extend(placed)
+                        current_void_volume += target_pore_volume
+                        break
+                else:
+                    raise RuntimeError("Failed to place pores without overlap")
+
+
+            spheres.append((x,y,z,r))
+            i,j,k = cell_coords(x,y,z)
+            grid[i][j][k].append(len(spheres)-1)
+            porous_volume += V
+            break
+
+    print(f"\n{'='*60}")
+    print("FINAL RESULTS")
+    print(f"{'='*60}")
+    print(f"Total grains: {len(spheres)}")
+    print(f"Total AP volume fraction: {(solid_volume + hollow_volume + porous_volume):.4f}")
+    print(f"Solid volume fraction: {solid_volume:.4f}")
+    print(f"Porous volume fraction: {porous_volume:.4f}")
+    print(f"Hollow volume fraction: {hollow_volume:.4f}")
+    print(f"Void fraction: {current_void_volume/total_domain_volume:.4f}")
+    print(f"Target:        {void_fraction:.4f}")
+    print(f"Error:         {abs(current_void_volume/total_domain_volume - void_fraction):.2e}")
+    print(f"{'='*60}\n")
+
+    save_xyzr(spheres, AP_xyzr, img_size, physical_size)
+    save_xyzr(voids, void_xyzr, img_size, physical_size)
+
+    return current_void_volume / total_domain_volume
+
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def visualize_xyzr_3d(
+    filename,
+    domain_size=None,
+    sphere_resolution=20,
+    max_spheres=None,
+    elev=25,
+    azim=45,
+    alpha=0.6
+):
+    """
+    Helper function to visualize a 3D xyzr particle file.
+
+    Parameters
+    ----------
+    filename : str
+        Path to xyzr file (columns: x y z r)
+
+    domain_size : float or None
+        If provided, sets axis limits from 0 to domain_size
+
+    sphere_resolution : int
+        Number of surface divisions for spheres (lower = faster)
+
+    max_spheres : int or None
+        If provided, only plots first N spheres (useful for large files)
+
+    elev, azim : float
+        View angles for 3D plot
+
+    alpha : float
+        Sphere transparency
+    """
+
+    # ----------------------------
+    # Load xyzr data
+    # ----------------------------
+    data = np.loadtxt(filename)
+
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+
+    x_vals = data[:, 0]
+    y_vals = data[:, 1]
+    z_vals = data[:, 2]
+    r_vals = data[:, 3]
+
+    if max_spheres is not None:
+        x_vals = x_vals[:max_spheres]
+        y_vals = y_vals[:max_spheres]
+        z_vals = z_vals[:max_spheres]
+        r_vals = r_vals[:max_spheres]
+
+    print(f"Visualizing {len(x_vals)} spheres")
+
+    # ----------------------------
+    # Setup figure
+    # ----------------------------
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Create sphere surface grid once
+    u = np.linspace(0, 2 * np.pi, sphere_resolution)
+    v = np.linspace(0, np.pi, sphere_resolution)
+    u, v = np.meshgrid(u, v)
+
+    # ----------------------------
+    # Plot spheres
+    # ----------------------------
+    for x0, y0, z0, r in zip(x_vals, y_vals, z_vals, r_vals):
+
+        xs = x0 + r * np.cos(u) * np.sin(v)
+        ys = y0 + r * np.sin(u) * np.sin(v)
+        zs = z0 + r * np.cos(v)
+
+        ax.plot_surface(
+            xs, ys, zs,
+            linewidth=0,
+            alpha=alpha
+        )
+
+    # ----------------------------
+    # Formatting (similar feel to 2D version)
+    # ----------------------------
+    if domain_size is not None:
+        ax.set_xlim(0, domain_size)
+        ax.set_ylim(0, domain_size)
+        ax.set_zlim(0, domain_size)
+
+    ax.set_box_aspect([1, 1, 1])
+    ax.view_init(elev=elev, azim=azim)
+
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+
+    plt.tight_layout()
+    
+    plt.show()
+    plt.savefig(filename.replace('.xyzr', '_3D.png'), dpi=300)
+    plt.close()
 
 
 
@@ -1743,8 +2154,8 @@ if __name__ == "__main__":
 if __name__ == "__main__":
     #save_path, save_path_untitled, _, _ = gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev_bi, max_attempts, 2, mix)
     #print(f"\nSaved AP–HTPB microstructure images to: {save_path} and {save_path_untitled}")
-    gen_struct_combined(
-        'test.png', 'test_untitled.png', 'test_AP.xyzr', 'test_voids.xyzr', 
-        1, 0.0012, 0.8, 10000, 0.3, 0.0, 0.3, 0.003
-    ) #solid, hollow, porous
+     #solid, hollow, porous
     #mass_frac_to_vol_frac(0.8, 0.0, 0.0)
+    print('Hola')
+    gen_struct_combined3D('test3D', 'test3D_untitled', 'test3D_xyzr', 'test3D_void_xyzr', 1, 30e-4, 0.5, 100000, 0.5, 0.0, 0.1, 0.0, 80e-6, 15e-6, 15e-6) 
+    visualize_xyzr_3d('test3D_xyzr')

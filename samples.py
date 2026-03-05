@@ -731,7 +731,7 @@ if __name__ == "__main__":
     #mass_frac_to_vol_frac(00, 0.8, 0.033))
     #mass_frac_to_vol_frac(0.5375, 0, 0)
     vol_fracs, rho = mass_frac_to_vol_frac2(materials, densities, void_fraction=0.0)
-
+    
     #generate_combined(0, 0.65, 0, 0.08, "porous_ex",1, 1e-4)
     #generate_combined(0, 0, 0.65, 0.08, "hollow_ex",1, 1e-4)
     #generate_combined(0, 0.3, 0, 0.033, "porous_80_by_weight", 1, 5e-4)

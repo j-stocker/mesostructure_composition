@@ -15,12 +15,12 @@ folder = "./generated_images"
 os.makedirs(folder, exist_ok=True)  # create folder if it doesn't exist
 
 # Full path for saving the figure
-save_path = os.path.join(folder, "mesostructure.png")
-save_path_untitled = os.path.join(folder, "mesostructure_untitled.png")
-save_path_xyzr = os.path.join(folder, "mesostructure.xyzr")
+save_path = os.path.join(folder, "new_datasets/A/A.png")
+save_path_untitled = os.path.join(folder, "new_datasets/A/A_untitled.png")
+save_path_xyzr = os.path.join(folder, "new_datasets/A/A.xyzr")
 
 img_size = 1 #square image, 1x1 (makes other values easier)
-physical_size = 5e-4 #m
+physical_size = 1200e-6 #m
 physical_mean_radius = 50e-6 #given as a portion of the image's height/width, 3%
 ap_ratio = 0.7 #60% AP
 #monomodal
@@ -1208,9 +1208,13 @@ def gen_struct_combined_no_img(
     def img_r(mu):
         return mu / physical_size * img_size
 
-    def sample_radius(mu, sigma):
-        return rng.lognormal(mu, sigma)
-
+    def sample_radius(mean_radius, rad_dev):
+        """
+        Sample a log-normal radius with given mean and relative std dev (rad_dev).
+        """
+        sigma_ln = np.sqrt(np.log(1 + rad_dev**2))
+        mu_ln = np.log(mean_radius) - 0.5 * sigma_ln**2
+        return rng.lognormal(mu_ln, sigma_ln)
     def pore_radii_2_to_5(target_area, r_particle, rng):
         n_pores = rng.integers(2, 6)
         alpha = np.ones(n_pores)
@@ -1226,7 +1230,11 @@ def gen_struct_combined_no_img(
     grid = [[[] for _ in range(n_cells)] for __ in range(n_cells)]
 
     def cell_coords(x, y):
-        return int(x // cell_size), int(y // cell_size)
+        cx = int(x // cell_size)
+        cy = int(y // cell_size)
+        cx = max(0, min(n_cells - 1, cx))
+        cy = max(0, min(n_cells - 1, cy))
+        return cx, cy
 
     def nearby(x, y, circles):
         cx, cy = cell_coords(x, y)
@@ -1294,7 +1302,7 @@ def gen_struct_combined_no_img(
         if solid_area >= vol_percent_solid:
             break
 
-        r = sample_radius(mu, sigma)
+        r = sample_radius(img_r(mean_rad_solid), rad_dev)
         A = math.pi * r**2 / total_domain_area
         if solid_area + A > vol_percent_solid:
             continue
@@ -1321,7 +1329,7 @@ def gen_struct_combined_no_img(
         if hollow_area >= vol_percent_hollow:
             break
 
-        r = sample_radius(mu, sigma)
+        r = sample_radius(img_r(mean_rad_hollow), rad_dev)
         A = math.pi * r**2 / total_domain_area
         if hollow_area + A > vol_percent_hollow:
             continue
@@ -1361,7 +1369,7 @@ def gen_struct_combined_no_img(
         if porous_area >= vol_percent_porous:
             break
 
-        r = sample_radius(mu, sigma)
+        r = sample_radius(img_r(mean_rad_porous), rad_dev)
         A = math.pi * r**2 / total_domain_area
         if porous_area + A > vol_percent_porous:
             continue
@@ -1422,7 +1430,8 @@ def gen_struct_combined(
     vol_percent_solid, vol_percent_hollow, vol_percent_porous, void_fraction,
     mean_rad_solid=120e-6, mean_rad_hollow=2e-6, mean_rad_porous=4.5e-6,
     max_tries=1, interface_width=1e-7,
-    N_mask_base=1024, dpi_highres=100
+    N_mask_base=1024, dpi_highres=100, mwd_target=8.1e-6,
+    mwd_tolerance=None
 ):
     """
     2D microstructure generator with exact global void fraction control.
@@ -1462,7 +1471,7 @@ def gen_struct_combined(
         return rng.lognormal(mu, sigma)
 
     def pore_radii_2_to_5(target_area, r_particle, rng):
-        n_pores = rng.integers(2, 6)
+        n_pores = rng.integers(4, 10)
         alpha = np.ones(n_pores)
         alpha[0] = 3.0  # bias first pore a bit larger
         areas = rng.dirichlet(alpha) * target_area
@@ -1476,7 +1485,11 @@ def gen_struct_combined(
     grid = [[[] for _ in range(n_cells)] for __ in range(n_cells)]
 
     def cell_coords(x, y):
-        return int(x // cell_size), int(y // cell_size)
+        cx = int(x // cell_size)
+        cy = int(y // cell_size)
+        cx = max(0, min(n_cells - 1, cx))
+        cy = max(0, min(n_cells - 1, cy))
+        return cx, cy
 
     def nearby(x, y, circles):
         cx, cy = cell_coords(x, y)
@@ -1539,16 +1552,17 @@ def gen_struct_combined(
     # SOLID GRAINS
     # -----------------------------
     print("Placing solid grains...")
-    mu = math.log(img_r(mean_rad_solid))
-    sigma = rad_dev
 
+    sigma_ln = np.sqrt(np.log(1 + rad_dev**2))
     for attempt in range(max_attempts):
-        if attempt % 100 == 0 and attempt != 0:
+        if attempt % 1000 == 0 and attempt != 0:
             print(f"Reached solid attempt {attempt}")
         if solid_area >= vol_percent_solid:
             break
 
-        r = sample_radius(mu, sigma)
+        
+        mu_ln = np.log(img_r(mean_rad_solid)) - 1.5 * sigma_ln**2  # adjust for mean weight radius
+        r = rng.lognormal(mu_ln, sigma_ln)
         A = math.pi * r**2 / total_domain_area
         if solid_area + A > vol_percent_solid:
             continue
@@ -1557,7 +1571,7 @@ def gen_struct_combined(
             x = rng.uniform(-margin + r, img_size + margin - r)
             y = rng.uniform(-margin + r, img_size + margin - r)
 
-            if all((x-cx)**2 + (y-cy)**2 >= (r+cr)**2 for cx,cy,cr in nearby(x,y,circles)):
+            if all((x-cx)**2 + (y-cy)**2 > (r+cr)**2 for cx,cy,cr in nearby(x,y,circles)):
                 circles.append((x,y,r))
                 grid[cell_coords(x,y)[0]][cell_coords(x,y)[1]].append(len(circles)-1)
                 solid_area += A
@@ -1565,56 +1579,41 @@ def gen_struct_combined(
 
     print(f"  Solid area fraction: {solid_area:.4f}")
 
-    # -----------------------------
+# -----------------------------
     # HOLLOW GRAINS
     # -----------------------------
     print("\nPlacing hollow grains...")
-    mu = math.log(img_r(mean_rad_hollow))
 
     for attempt in range(max_attempts):
-        if attempt % 100 == 0 and attempt != 0:
+        if attempt % 1000 == 0 and attempt != 0:
             print(f"Reached hollow attempt {attempt}, hollow area so far: {hollow_area:.4f}")
         if hollow_area >= vol_percent_hollow:
             break
 
-        r = sample_radius(mu, sigma)
+        mu_ln = np.log(img_r(mean_rad_hollow)) - 1.5 * sigma_ln**2
+        r = rng.lognormal(mu_ln, sigma_ln)
         A = math.pi * r**2 / total_domain_area
         if hollow_area + A > vol_percent_hollow:
             continue
-        if hollow_area < 0.6 * vol_percent_hollow:
-            MAX_POSITION_TRIES = 4
-        else:
-            MAX_POSITION_TRIES = 30
+
+        MAX_POSITION_TRIES = 4 if hollow_area < 0.6 * vol_percent_hollow else 30
+
         for _ in range(MAX_POSITION_TRIES):
-            #x = rng.uniform(r, img_size-r)
-            #y = rng.uniform(r, img_size-r)
-            #SMALL IMAGE ONLY
             x = rng.uniform(-margin + r, img_size + margin - r)
             y = rng.uniform(-margin + r, img_size + margin - r)
-            
+
             if not any((x-cx)**2 + (y-cy)**2 < (r+cr)**2 for cx,cy,cr in nearby(x,y,circles)):
-                #convert void fraction ov erall to that of hollow particles
-                f_void_hollow = void_fraction * total_domain_area / (vol_percent_hollow * total_domain_area)
-            
-
-                particle_void = f_void_hollow * math.pi * r**2
-                particle_void = min(particle_void, target_void_area - current_void_area)
-
-                rv = r * np.sqrt(f_void_hollow)
-
-
-                circles.append((x,y,r))
-                voids.append((x,y,rv))
+                rv = r * np.sqrt(void_fraction/vol_percent_hollow)
+                circles.append((x, y, r))
+                voids.append((x, y, rv))
                 grid[cell_coords(x,y)[0]][cell_coords(x,y)[1]].append(len(circles)-1)
-
                 hollow_area += A
-                current_void_area += particle_void
+                current_void_area += math.pi * rv**2
                 break
 
     print(f"  Hollow area fraction: {hollow_area:.4f}")
     print(f"  Void fraction so far: {current_void_area/total_domain_area:.4f}")
-
-    # -----------------------------
+# -----------------------------
     # POROUS GRAINS
     # -----------------------------
     print("\nPlacing porous grains...")
@@ -1622,12 +1621,13 @@ def gen_struct_combined(
 
     for attempt in range(max_attempts):
         
-        if attempt % 100 == 0 and attempt != 0:
+        if attempt % 1000 == 0 and attempt != 0:
             print(f"Reached porous attempt {attempt}, porous area so far: {porous_area:.4f}")
         if porous_area >= vol_percent_porous:
             break
 
-        r = sample_radius(mu, sigma)
+        mu_ln = np.log(img_r(mean_rad_porous)) - 1.5 * sigma_ln**2
+        r = rng.lognormal(mu_ln, sigma_ln)
         A = math.pi * r**2 / total_domain_area
         if porous_area + A > vol_percent_porous:
             continue
@@ -1638,35 +1638,94 @@ def gen_struct_combined(
             MAX_POSITION_TRIES = 40
         
         for _ in range(MAX_POSITION_TRIES):
-            #x = rng.uniform(r, img_size-r)
-            #y = rng.uniform(r, img_size-r)
-            #SMALL IMAGES ONLY
             x = rng.uniform(-margin + r, img_size + margin - r)
             y = rng.uniform(-margin + r, img_size + margin - r)
             if any((x-cx)**2 + (y-cy)**2 < (r+cr)**2 for cx,cy,cr in nearby(x,y,circles)):
                 continue
 
-            phi_pore = rng.uniform(porosity_min, porosity_max)
-            target_pore_area = phi_pore * np.pi * r**2
-            target_pore_area = min(target_pore_area, target_void_area - current_void_area)
-
-            for regen in range(5):
-                pore_radii = pore_radii_2_to_5(target_pore_area, r, rng)
-                placed = place_pores_for_particle(x, y, r, pore_radii, voids)
-                if placed is not None:
-                    voids.extend(placed)
-                    current_void_area += target_pore_area
-                    break
-            else:
-                raise RuntimeError("Failed to place pores without overlap")
-
-            circles.append((x,y,r))
+            circles.append((x, y, r))
             grid[cell_coords(x,y)[0]][cell_coords(x,y)[1]].append(len(circles)-1)
             porous_area += A
-
-            #print(f"  Porous grain r={r*physical_size/img_size*1e6:.1f} µm | pores={len(pore_radii)}")
             break
-        
+
+    print(f"  Porous area fraction: {porous_area:.4f}")
+
+    # -----------------------------
+    # MWD CHECK
+    # -----------------------------
+    save_xyzr(circles, AP_xyzr, img_size, physical_size)
+
+    if mwd_tolerance is not None:
+        radii = np.array([r for (x, y, r) in circles])
+        mwd_actual = 2 * np.sum(radii**4) / np.sum(radii**3) * (physical_size / img_size)
+        print(f"\nMWD check: {mwd_actual:.4e} m (target {mwd_target:.4e} m)")
+        if abs(mwd_actual - mwd_target) > mwd_tolerance:
+            print("MWD out of tolerance — skipping void placement.")
+            return None
+
+    # -----------------------------
+    # PLACE VOIDS WITHIN POROUS GRAINS
+    # -----------------------------
+    print("\nPlacing voids within porous grains...")
+    print(f"  Number of porous particles: {len(circles)}")
+    print(f"  Target void area: {target_void_area:.4f}")
+    if vol_percent_porous > 0:
+        while current_void_area < target_void_area:
+
+            progress = False
+
+            for idx, (px, py, pr) in enumerate(circles):
+
+                if current_void_area >= target_void_area:
+                    break
+
+                remaining_area = target_void_area - current_void_area
+
+                # choose pore radius based on remaining area and particle size
+                pore_r = rng.lognormal(math.log(pr * 0.15), 0.4)
+                pore_r = float(np.clip(pore_r, 0.01 * pr, 0.35 * pr))
+
+                pore_area = np.pi * pore_r**2
+
+                if pore_area > remaining_area:
+                    pore_r = np.sqrt(remaining_area / np.pi)
+                    pore_area = remaining_area
+
+                # try to place pore without overlap
+                success = False
+
+                for _ in range(500):
+
+                    theta = rng.uniform(0, 2*np.pi)
+                    rho   = rng.uniform(0, pr - pore_r)
+
+                    vx = px + rho*np.cos(theta)
+                    vy = py + rho*np.sin(theta)
+
+                    # must remain inside particle
+                    if np.hypot(vx-px, vy-py) + pore_r > pr:
+                        continue
+
+                    # must not overlap existing voids
+                    if any(np.hypot(vx-xv, vy-yv) < pore_r + rv for xv,yv,rv in voids):
+                        continue
+
+                    success = True
+                    break
+
+                if success:
+                    voids.append((vx, vy, pore_r))
+                    current_void_area += pore_area
+                    progress = True
+
+            print(f"  Void fraction so far: {current_void_area/total_domain_area:.4f}")
+
+            if not progress:
+                print("WARNING: could not place more voids without overlap.")
+                break
+    print(f"  Total voids placed: {len(voids)}")
+    print(f"  Void fraction achieved: {current_void_area/total_domain_area:.4f}")
+    print(f"  Target:                 {void_fraction:.4f}")
 
     # -----------------------------
     # FINAL SUMMARY
@@ -1681,76 +1740,10 @@ def gen_struct_combined(
     print(f"Target:        {void_fraction:.4f}")
     print(f"Error:         {abs(current_void_area/total_domain_area - void_fraction):.2e}")
     print(f"{'='*60}\n")
-    
-    save_xyzr(circles, AP_xyzr, img_size, physical_size)
+
     save_xyzr(voids, void_xyzr, img_size, physical_size)
-    # -----------------------------
-    # Plotting
-    # -----------------------------
-    
-    fig2, ax2 = plt.subplots(figsize=(6, 6), dpi=dpi_highres)
-    ax2.set_position([0, 0, 1, 1])
-    ax2.set_axis_off()
-    ax2.set_xlim(0, img_size)
-    ax2.set_ylim(0, img_size)
-    ax2.set_aspect("equal")
-
-    # Background (binder / void)
-    ax2.add_patch(plt.Rectangle((0, 0), img_size, img_size, facecolor='#0000FF', zorder=0))
-
-    # AP grains
-    for (x, y, r) in circles:
-        ax2.add_patch(Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080',
-                              linewidth=interface_width / (physical_size / img_size) * 72, zorder=5))
-        ax2.add_patch(Circle((x, y), r, facecolor='none', edgecolor='#FFFFFF',
-                              linewidth=72 / dpi_highres, zorder=10))
-
-    # Voids
-    for (x, y, r) in voids:
-        ax2.add_patch(Circle((x, y), r, facecolor='#0000FF', edgecolor='#800080',
-                              linewidth=interface_width / (physical_size / img_size) * 72, zorder=6))
-        ax2.add_patch(Circle((x, y), r, facecolor='none', edgecolor='#FFFFFF',
-                              linewidth=72 / dpi_highres, zorder=10))
-
-    fig2.savefig(save_path_untitled, dpi=dpi_highres, bbox_inches=None, pad_inches=0.0)
-    plt.close(fig2)
-
-    # -----------------------------
-    # Annotated / lower-res figure
-    # -----------------------------
-    fig, ax = plt.subplots(figsize=(6, 6), dpi=1024 // 6)
-    ax.set_axis_off()
-    ax.set_xlim(0, img_size)
-    ax.set_ylim(0, img_size)
-    ax.set_aspect("equal")
-
-    ax.add_patch(plt.Rectangle((0, 0), img_size, img_size, facecolor='#0000FF', zorder=0))
-
-    for (x, y, r) in circles:
-        ax.add_patch(Circle((x, y), r, facecolor='#FF0000', edgecolor='#800080',
-                             linewidth=interface_width / (physical_size / img_size) * 72, zorder=5))
-        ax.add_patch(Circle((x, y), r, facecolor='none', edgecolor='#FFFFFF',
-                             linewidth=1, zorder=10))
-
-    for (x, y, r) in voids:
-        ax.add_patch(Circle((x, y), r, facecolor='#0000FF', edgecolor='#800080',
-                             linewidth=interface_width / (physical_size / img_size) * 72, zorder=6))
-        ax.add_patch(Circle((x, y), r, facecolor='none', edgecolor='#FFFFFF',
-                             linewidth=1, zorder=10))
-
-    void_frac_actual = current_void_area / total_domain_area
-    ax.set_title(f"Placed {len(circles)} grains | AP = {(solid_area + hollow_area + porous_area):.3f} | Void = {void_frac_actual:.3f}")
-
-    fig.savefig(save_path, dpi=1024 // 6, bbox_inches="tight", pad_inches=0.02)
-    plt.close(fig)
-    
-    # -----------------------------
-    # Save xyzr
-    # -----------------------------
-    
 
     return current_void_area / total_domain_area
-
 
 from mpl_toolkits import mplot3d 
 
@@ -1823,12 +1816,24 @@ def gen_struct_combined3D(
     def sample_radius(mu, sigma):
         return rng.lognormal(mu, sigma)
 
-    def pore_radii_2_to_5(target_volume, r_particle, rng):
+    def pore_radii_2_to_5(target_area, r_particle, rng):
         n_pores = rng.integers(2, 6)
         alpha = np.ones(n_pores)
         alpha[0] = 3.0
-        volumes = rng.dirichlet(alpha) * target_volume
-        return [min((3*v/(4*np.pi))**(1/3), 0.45 * r_particle) for v in volumes]
+        areas = rng.dirichlet(alpha) * target_area
+        radii = []
+        actual_area = 0.0
+        for a in areas:
+            r = min(np.sqrt(a / np.pi), 0.45 * r_particle)
+            radii.append(r)
+            actual_area += np.pi * r**2
+        # If clipping reduced total area, add a top-up pore
+        shortfall = target_area - actual_area
+        if shortfall > 0:
+            r_topup = min(np.sqrt(shortfall / np.pi), 0.45 * r_particle)
+            if r_topup > 0.01 * r_particle:
+                radii.append(r_topup)
+        return radii
 
     cell_size = img_r(mean_rad_solid) * 4
     n_cells = max(1, int(math.ceil(img_size / cell_size)))
@@ -2197,17 +2202,384 @@ def visualize_xyzr_3d(
     plt.savefig(filename.replace('.xyzr', '_3D.png'), dpi=300)
     plt.close()
 
+def void_frac_to_density(void_fraction_global, w_AP=0.72, rho_AP=1.950, rho_HTPB=0.930):
+    """
+    void_fraction_global: void fraction of the whole domain (e.g. 0.11)
+    w_AP: mass fraction of AP (e.g. 0.72)
+    Returns: rho_composite, phi_AP_particle, phi_HTPB, void_fraction_AP
+    """
+    w_HTPB = 1 - w_AP
+
+    v_AP_pure = w_AP / rho_AP
+    v_HTPB_pure = w_HTPB / rho_HTPB
+    total_pure = v_AP_pure + v_HTPB_pure
+
+    phi_AP_solid = v_AP_pure / total_pure
+    phi_HTPB_solid = v_HTPB_pure / total_pure
+
+    # phi_void_global = phi_AP_particle * void_fraction_AP
+    # phi_AP_particle = phi_AP_solid / (1 - void_fraction_AP)
+    # Substituting: phi_void_global = phi_AP_solid * void_fraction_AP / (1 - void_fraction_AP)
+    # Solving for void_fraction_AP:
+    # void_fraction_AP = phi_void_global / (phi_AP_solid + phi_void_global)
+    void_fraction_AP = void_fraction_global / (phi_AP_solid + void_fraction_global)
+
+    phi_AP_particle = phi_AP_solid / (1 - void_fraction_AP)
+    phi_HTPB = 1 - phi_AP_particle
+
+    rho_composite = phi_AP_solid * rho_AP + phi_HTPB * rho_HTPB
+
+    print(f"AP particles (incl. voids): {phi_AP_particle:.4f}")
+    print(f"HTPB:                       {phi_HTPB:.4f}")
+    print(f"Void fraction (global):     {void_fraction_global:.4f}")
+    print(f"Void fraction (within AP):  {void_fraction_AP:.4f}")
+    print(f"Sum:                        {phi_AP_particle + phi_HTPB:.4f}")
+    print(f"Composite density:          {rho_composite:.2f} g/cm^3")
+
+    return rho_composite, phi_AP_particle, phi_HTPB, void_fraction_AP
 
 
+
+
+
+def density_to_void_frac(rho_composite, w_AP=0.72, rho_AP=1.950, rho_HTPB=0.930):
+    """
+    rho_composite: measured overall density kg/m^3
+    w_AP: mass fraction of AP (e.g. 0.72)
+    Returns: void_fraction_global, phi_AP_particle, phi_HTPB, void_fraction_AP
+    """
+    w_HTPB = 1 - w_AP
+
+    v_AP_pure = w_AP / rho_AP
+    v_HTPB_pure = w_HTPB / rho_HTPB
+    total_pure = v_AP_pure + v_HTPB_pure
+
+    phi_AP_solid = v_AP_pure / total_pure
+
+    denom = rho_AP - (rho_composite - rho_HTPB) / phi_AP_solid
+    void_fraction_AP = 1 - rho_HTPB / denom
+
+    phi_AP_particle = phi_AP_solid / (1 - void_fraction_AP)
+    phi_void_global = phi_AP_particle * void_fraction_AP
+    phi_HTPB = 1 - phi_AP_particle
+
+    print(f"AP particles (incl. voids): {phi_AP_particle:.4f}")
+    print(f"HTPB:                       {phi_HTPB:.4f}")
+    print(f"Void fraction (global):     {phi_void_global:.4f}")
+    print(f"Void fraction (within AP):  {void_fraction_AP:.4f}")
+    print(f"Sum:                        {phi_AP_particle + phi_HTPB:.4f}")
+    print(f"Composite density:          {rho_composite:.2f} g/cm^3")
+
+    return phi_void_global, phi_AP_particle, phi_HTPB, void_fraction_AP
+
+def plot_from_xyzr(ap_xyzr_path, void_xyzr_path, save_path, save_path_untitled,
+                   physical_size=200e-6, img_size=1, interface_width=1e-7,
+                   dpi_highres=1024, ap_percent=74.64, void_percent=14):
+
+    import os
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Circle
+
+    def read_xyzr(path):
+        pts = []
+
+        if not os.path.exists(path) or os.path.getsize(path) == 0:
+            print(f"WARNING: xyzr file empty or missing: {path}")
+            return pts
+
+        with open(path, 'r') as f:
+            for line in f:
+                vals = line.strip().split()
+
+                if len(vals) == 3:        # x y r
+                    x, y, r = map(float, vals)
+
+                elif len(vals) >= 4:     # x y z r
+                    x, y, r = float(vals[0]), float(vals[1]), float(vals[-1])
+
+                else:
+                    continue
+
+                pts.append((
+                    x / physical_size * img_size,
+                    y / physical_size * img_size,
+                    r / physical_size * img_size
+                ))
+
+        return pts
+
+    circles = read_xyzr(ap_xyzr_path)
+    voids   = read_xyzr(void_xyzr_path)
+
+    print(f"Plotting {len(circles)} particles and {len(voids)} voids")
+
+    # -------------------------------------------------
+    # mean weight diameter (from AP particles only)
+    # definition: D43 = sum(d^4) / sum(d^3)
+    # -------------------------------------------------
+    if len(circles) > 0:
+        radii = np.array([c[2] for c in circles])
+        diameters = 2 * radii
+        mean_weight_diameter = np.sum(diameters**4) / np.sum(diameters**3)
+    else:
+        mean_weight_diameter = 0.0
+
+    #print(f"Mean weight diameter = {mean_weight_diameter:.6g}")
+
+    # ---------------- HIGH-RES IMAGE ----------------
+    fig2, ax2 = plt.subplots(figsize=(6, 6), dpi=dpi_highres)
+    ax2.set_position([0, 0, 1, 1])
+    ax2.set_axis_off()
+    ax2.set_xlim(0, img_size)
+    ax2.set_ylim(0, img_size)
+    ax2.set_aspect("equal")
+
+    ax2.add_patch(plt.Rectangle((0, 0), img_size, img_size,
+                                facecolor='#0000FF', zorder=0))
+
+    for (x, y, r) in circles:
+        ax2.add_patch(Circle((x, y), r,
+            facecolor='#FF0000', edgecolor='#800080',
+            linewidth=interface_width / (physical_size / img_size) * 72,
+            zorder=5))
+        ax2.add_patch(Circle((x, y), r,
+            facecolor='none', edgecolor='#FFFFFF',
+            linewidth=72 / dpi_highres, zorder=10))
+
+    for (x, y, r) in voids:
+        ax2.add_patch(Circle((x, y), r,
+            facecolor='#0000FF', edgecolor='#800080',
+            linewidth=interface_width / (physical_size / img_size) * 72,
+            zorder=6))
+        ax2.add_patch(Circle((x, y), r,
+            facecolor='none', edgecolor='#FFFFFF',
+            linewidth=72 / dpi_highres, zorder=10))
+
+    fig2.savefig(save_path_untitled,
+                 dpi=dpi_highres,
+                 bbox_inches=None,
+                 pad_inches=0.0)
+    plt.close(fig2)
+
+    # ---------------- LABELED IMAGE ----------------
+    fig, ax = plt.subplots(figsize=(6, 6), dpi=1024 // 6)
+    ax.set_axis_off()
+    ax.set_xlim(0, img_size)
+    ax.set_ylim(0, img_size)
+    ax.set_aspect("equal")
+
+    ax.add_patch(plt.Rectangle((0, 0), img_size, img_size,
+                               facecolor='#0000FF', zorder=0))
+
+    for (x, y, r) in circles:
+        ax.add_patch(Circle((x, y), r,
+            facecolor='#FF0000', edgecolor='#800080',
+            linewidth=interface_width / (physical_size / img_size) * 72,
+            zorder=5))
+        ax.add_patch(Circle((x, y), r,
+            facecolor='none', edgecolor='#FFFFFF',
+            linewidth=1, zorder=10))
+
+    for (x, y, r) in voids:
+        ax.add_patch(Circle((x, y), r,
+            facecolor='#0000FF', edgecolor='#800080',
+            linewidth=interface_width / (physical_size / img_size) * 72,
+            zorder=6))
+        ax.add_patch(Circle((x, y), r,
+            facecolor='none', edgecolor='#FFFFFF',
+            linewidth=1, zorder=10))
+
+
+    ax.set_title(
+    f"Placed {len(circles)} grains | AP % = {ap_percent:.2f} | Void % = {void_percent:.2f}"
+)
+
+    fig.savefig(save_path,
+                dpi=1024 // 6,
+                bbox_inches="tight",
+                pad_inches=0.02)
+
+    plt.close(fig)
+
+    return mean_weight_diameter
+
+
+
+def mean_weight_diameter(filename):
+    """
+    Reads an xyzr file and calculates the mean weight diameter.
+    
+    Parameters:
+        filename (str): Path to the xyzr file (columns: x y z r)
+    
+    Returns:
+        float: mean weight diameter
+    """
+    # Load r column (assuming last column is r)
+    data = np.loadtxt(filename)
+    radii = data[:, -1]  # last column
+    
+    # Calculate D_w
+    numerator = np.sum(radii**4)
+    denominator = np.sum(radii**3)
+    D_w = 2 * numerator / denominator
+    
+    return D_w
+
+
+def generate_structures_with_target_mwd(
+    subfolder,
+    target_mwd,
+    mwd_tolerance=0.02e-6,
+    n_target=10,
+    max_total_attempts=200,
+    base_name="A",
+    # gen_struct_combined parameters
+    physical_size=200e-6,
+    rad_dev=0.1,
+    max_attempts=20000,
+    vol_percent_solid=0,
+    vol_percent_hollow=0,
+    vol_percent_porous=0.7141,
+    void_fraction=0.1633,
+    mean_rad_solid=4.05e-6,
+    mean_rad_hollow=4.05e-6,
+    mean_rad_porous=4.05e-6,
+):
+    os.makedirs(subfolder, exist_ok=True)
+    subsubfolder = os.path.join(subfolder, "example_images")
+    accepted = []
+    attempt = 0
+    accepted_idx = 0
+
+    print(f"\n{'='*60}")
+    print(f"Target MWD:     {target_mwd:.4e} m")
+    print(f"Tolerance:      ±{mwd_tolerance:.4e} m")
+    print(f"Target count:   {n_target}")
+    print(f"{'='*60}\n")
+
+    while len(accepted) < n_target and attempt < max_total_attempts:
+        attempt += 1
+        name = f"{base_name}_{accepted_idx:02d}"
+
+        print(f"\n--- Attempt {attempt} (accepted so far: {len(accepted)}/{n_target}) ---")
+
+        ap_xyzr            = os.path.join(subfolder, f"{name}_AP.xyzr")
+        void_xyzr          = os.path.join(subfolder, f"{name}_void.xyzr")
+        save_path          = os.path.join(subfolder, f"{name}.png")
+        save_path_untitled = os.path.join(subfolder, f"{name}_untitled.png")
+
+        try:
+            void_frac = gen_struct_combined(
+                save_path,
+                save_path_untitled,
+                ap_xyzr,
+                void_xyzr,
+                img_size=1,
+                physical_size=physical_size,
+                rad_dev=rad_dev,
+                max_attempts=max_attempts,
+                vol_percent_solid=vol_percent_solid,
+                vol_percent_hollow=vol_percent_hollow,
+                vol_percent_porous=vol_percent_porous,
+                void_fraction=void_fraction,
+                mean_rad_solid=mean_rad_solid,
+                mean_rad_hollow=mean_rad_hollow,
+                mean_rad_porous=mean_rad_porous,
+                mwd_tolerance=mwd_tolerance, 
+                mwd_target=target_mwd
+            )
+        except Exception as e:
+            print(f"  Generation failed: {e}")
+            # Clean up any partial files
+            for path in [ap_xyzr, void_xyzr, save_path, save_path_untitled]:
+                if os.path.exists(path):
+                    os.remove(path)
+            continue
+        if void_frac is None:
+            if os.path.exists(ap_xyzr):
+                os.remove(ap_xyzr)
+            continue
+        try:
+            mwd = mean_weight_diameter(ap_xyzr)
+        except Exception as e:
+            print(f"  MWD calculation failed: {e}")
+            for path in [ap_xyzr, void_xyzr, save_path, save_path_untitled]:
+                if os.path.exists(path):
+                    os.remove(path)
+            continue
+
+        mwd_error = abs(mwd - target_mwd)
+        print(f"  MWD:        {mwd:.4e} m")
+        print(f"  Target MWD: {target_mwd:.4e} m")
+        print(f"  Error:      {mwd_error:.4e} m  ({'ACCEPTED ✓' if mwd_error <= mwd_tolerance else 'rejected ✗'})")
+
+        if mwd_error <= mwd_tolerance:
+            accepted.append({
+                "index":     accepted_idx,
+                "name":      name,
+                "mwd":       mwd,
+                "void_frac": void_frac,
+                "attempt":   attempt,
+            })
+            print(f"  → Kept as {name}")
+            if accepted_idx == 0:
+                os.makedirs(subsubfolder, exist_ok=True)
+                plot_from_xyzr(
+                    ap_xyzr,
+                    void_xyzr,
+                    os.path.join(subsubfolder, f"{name}.png"),
+                    os.path.join(subsubfolder, f"{name}_untitled.png"), 
+                    interface_width=1e-7, ap_percent=100*(vol_percent_hollow+vol_percent_porous+vol_percent_solid), void_percent=100*void_fraction
+                )
+            accepted_idx += 1  # only increment on acceptance so naming stays contiguous
+        else:
+            for path in [ap_xyzr, void_xyzr, save_path, save_path_untitled]:
+                if os.path.exists(path):
+                    os.remove(path)
+
+    # Summary
+    print(f"\n{'='*60}")
+    print(f"DONE: {len(accepted)}/{n_target} structures accepted in {attempt} attempts")
+    print(f"{'='*60}")
+    for s in accepted:
+        print(f"  [{s['index']:02d}] {s['name']}  MWD={s['mwd']:.4e} m  "
+              f"void={s['void_frac']:.4f}  (attempt {s['attempt']})")
+    print(f"{'='*60}\n")
+
+    return accepted
 
 
 if __name__ == "__main__":
-    #save_path, save_path_untitled, _, _ = gen_struct(save_path, save_path_untitled, save_path_xyzr, img_size, physical_size, physical_mean_radius, ap_ratio, rad_dev_bi, max_attempts, 2, mix)
-    #print(f"\nSaved AP–HTPB microstructure images to: {save_path} and {save_path_untitled}")
-    #solid, hollow, porous
-    #mass_frac_to_vol_frac(0.8, 0.0, 0.0)
-    print('Hola')
-    #gen_struct_combined3D('test3D', 'test3D_untitled', 'test3D_xyzr', 'test3D_void_xyzr', 1, 30e-4, 0.5, 100000, 0.5, 0.0, 0.1, 0.0, 80e-6, 15e-6, 15e-6) 
-    gen_struct_combined3D('test3D_3', 'test3D_unititled', 'test3D_4_xyzr', 'test3D_3_void_xyzr', 1, 5000e-6, 0.3, 10000, 0.473596, 0.118399, 0, 0, mean_rad_solid=145e-6, mean_rad_hollow=75e-6)
-    
-    visualize_xyzr_3d('test3D_4_xyzr')
+
+    results = generate_structures_with_target_mwd(
+        subfolder="./new_datasets/T",
+        base_name="T",
+        target_mwd=2.9e-6,
+        mwd_tolerance=0.05e-6,
+        n_target=10,
+        max_total_attempts=200,
+        physical_size=200e-6,
+        rad_dev=0.2,
+        max_attempts=100000,
+        vol_percent_solid=0.5508,
+        vol_percent_hollow=0,
+        vol_percent_porous=0,
+        void_fraction=0,
+        mean_rad_solid=1.38e-6,
+        mean_rad_hollow=1.95e-6,
+        mean_rad_porous=1.95e-6,
+    )
+    '''
+    plot_from_xyzr(
+        ap_xyzr_path="./new_datasets/G_vf_14/G_00_AP.xyzr",
+        void_xyzr_path="./new_datasets/G_vf_14/G_00_void.xyzr",
+        save_path="./new_datasets/G_vf_14/G_00.png",
+        save_path_untitled="./new_datasets/G_vf_14/G_00_untitled.png",
+        physical_size=200e-6,
+        img_size=1,
+        interface_width=1e-7,
+        dpi_highres=1024
+    )
+    '''

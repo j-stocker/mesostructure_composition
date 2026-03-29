@@ -709,18 +709,16 @@ def mass_frac_to_vol_frac2(
 
 
 materials = {
-    'AP_coarse': 0.68*0.8,
-    'AP_fine': 0.68*0.2,
-    'Al_nano': 0.15,
-    'HTPB': 0.17
+    'AP_coarse': 0.72,
+    'HTPB': 1-0.72
 }
 
 densities = {
     'AP_coarse': 1.95,
-    'AP_fine': 1.95,
-    'Al_nano': 2.7,
-    'HTPB': 0.92
+    'HTPB': 0.93
 }
+
+
 
 
 if __name__ == "__main__":
@@ -730,7 +728,15 @@ if __name__ == "__main__":
     #perc_vol = 
     #mass_frac_to_vol_frac(00, 0.8, 0.033))
     #mass_frac_to_vol_frac(0.5375, 0, 0)
-    vol_fracs, rho = mass_frac_to_vol_frac2(materials, densities, void_fraction=0.0)
+    vol_fracs, rho = mass_frac_to_vol_frac2(materials, densities, void_fraction=0.11)
+    mass_frac_to_vol_frac(
+    0,
+    0.72,
+    0.11,
+    m_HTPB=1-0.72,
+    rho_AP=1.95,
+    rho_HTPB=0.92
+)
     
     #generate_combined(0, 0.65, 0, 0.08, "porous_ex",1, 1e-4)
     #generate_combined(0, 0, 0.65, 0.08, "hollow_ex",1, 1e-4)

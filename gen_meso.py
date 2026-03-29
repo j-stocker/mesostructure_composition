@@ -1678,11 +1678,13 @@ def gen_struct_combined(
 
                 if current_void_area >= target_void_area:
                     break
-
+                
+                
                 remaining_area = target_void_area - current_void_area
 
                 # choose pore radius based on remaining area and particle size
-                pore_r = rng.lognormal(math.log(pr * 0.15), 0.4)
+                pore_r = rng.lognormal(math.log(pr * 0.1
+                                                ), 0.4) #7% pore radius, previously 15
                 pore_r = float(np.clip(pore_r, 0.01 * pr, 0.35 * pr))
 
                 pore_area = np.pi * pore_r**2
@@ -2321,7 +2323,7 @@ def plot_from_xyzr(ap_xyzr_path, void_xyzr_path, save_path, save_path_untitled,
     if len(circles) > 0:
         radii = np.array([c[2] for c in circles])
         diameters = 2 * radii
-        mean_weight_diameter = np.sum(diameters**4) / np.sum(diameters**3)
+        mean_weight_diameter = np.sum(diameters**3) / np.sum(diameters**2)
     else:
         mean_weight_diameter = 0.0
 
@@ -2421,8 +2423,8 @@ def mean_weight_diameter(filename):
     radii = data[:, -1]  # last column
     
     # Calculate D_w
-    numerator = np.sum(radii**4)
-    denominator = np.sum(radii**3)
+    numerator = np.sum(radii**3)
+    denominator = np.sum(radii**2)
     D_w = 2 * numerator / denominator
     
     return D_w
@@ -2552,25 +2554,116 @@ def generate_structures_with_target_mwd(
 
 
 if __name__ == "__main__":
-
     results = generate_structures_with_target_mwd(
-        subfolder="./new_datasets/T",
-        base_name="T",
-        target_mwd=2.9e-6,
+        subfolder="./new_datasets/r10_xyzrs/C",
+        base_name="C",
+        target_mwd=5.5e-6,
         mwd_tolerance=0.05e-6,
-        n_target=10,
+        n_target=1,
         max_total_attempts=200,
         physical_size=200e-6,
         rad_dev=0.2,
         max_attempts=100000,
-        vol_percent_solid=0.5508,
+        vol_percent_solid=0,
         vol_percent_hollow=0,
-        vol_percent_porous=0,
-        void_fraction=0,
-        mean_rad_solid=1.38e-6,
-        mean_rad_hollow=1.95e-6,
-        mean_rad_porous=1.95e-6,
+        vol_percent_porous=0.6389,
+        void_fraction=0.06,
+        mean_rad_solid=2.75e-6,
+        mean_rad_hollow=4.05e-6,
+        mean_rad_porous=2.7e-6,
     )
+    '''
+    results = generate_structures_with_target_mwd(
+        subfolder="./new_datasets/r10_xyzrs/B",
+        base_name="B",
+        target_mwd=4.7e-6,
+        mwd_tolerance=0.05e-6,
+        n_target=1,
+        max_total_attempts=200,
+        physical_size=200e-6,
+        rad_dev=0.2,
+        max_attempts=100000,
+        vol_percent_solid=0.00,
+        vol_percent_hollow=0,
+        vol_percent_porous=0.6389,
+        void_fraction=0.06,
+        mean_rad_solid=2.35e-6,
+        mean_rad_hollow=4.05e-6,
+        mean_rad_porous=2.35e-6,
+    )
+    results = generate_structures_with_target_mwd(
+        subfolder="./new_datasets/r10_xyzrs/C",
+        base_name="C",
+        target_mwd=5.5e-6,
+        mwd_tolerance=0.05e-6,
+        n_target=1,
+        max_total_attempts=200,
+        physical_size=200e-6,
+        rad_dev=0.2,
+        max_attempts=100000,
+        vol_percent_solid=0.0,
+        vol_percent_hollow=0.0,
+        vol_percent_porous=0.6389,
+        void_fraction=0.06,
+        mean_rad_solid=2.75e-6,
+        mean_rad_hollow=2.75e-6,
+        mean_rad_porous=2.75-6,
+    )
+    results = generate_structures_with_target_mwd(
+        subfolder="./new_datasets/r10_xyzrs/D",
+        base_name="D",
+        target_mwd=4.5e-6,
+        mwd_tolerance=0.05e-6,
+        n_target=1,
+        max_total_attempts=200,
+        physical_size=200e-6,
+        rad_dev=0.2,
+        max_attempts=100000,
+        vol_percent_solid=0,
+        vol_percent_hollow=0,
+        vol_percent_porous=0.6604,
+        void_fraction=0.07,
+        mean_rad_solid=2.25e-6,
+        mean_rad_hollow=4.05e-6,
+        mean_rad_porous=2.25e-6,
+    )
+    results = generate_structures_with_target_mwd(
+        subfolder="./new_datasets/r10_xyzrs/E",
+        base_name="E",
+        target_mwd=8.5e-6,
+        mwd_tolerance=0.05e-6,
+        n_target=1,
+        max_total_attempts=200,
+        physical_size=200e-6,
+        rad_dev=0.2,
+        max_attempts=100000,
+        vol_percent_solid=0.00,
+        vol_percent_hollow=0,
+        vol_percent_porous=0.6604,
+        void_fraction=0.07,
+        mean_rad_solid=4.25e-6,
+        mean_rad_hollow=4.05e-6,
+        mean_rad_porous=4.25e-6,
+    )
+    results = generate_structures_with_target_mwd(
+        subfolder="./new_datasets/r10_xyzrs/F",
+        base_name="F",
+        target_mwd=9.0e-6,
+        mwd_tolerance=0.05e-6,
+        n_target=1,
+        max_total_attempts=200,
+        physical_size=200e-6,
+        rad_dev=0.2,
+        max_attempts=100000,
+        vol_percent_solid=0.0,
+        vol_percent_hollow=0,
+        vol_percent_porous=0.6496,
+        void_fraction=0.06,
+        mean_rad_solid=4.5e-6,
+        mean_rad_hollow=4.05e-6,
+        mean_rad_porous=4.5e-6,
+    )
+    '''
     '''
     plot_from_xyzr(
         ap_xyzr_path="./new_datasets/G_vf_14/G_00_AP.xyzr",
@@ -2583,3 +2676,4 @@ if __name__ == "__main__":
         dpi_highres=1024
     )
     '''
+

@@ -27,8 +27,8 @@ MANUAL_VALUES = {
 }
 # ------------------------------------------------------------------------
 
-DOMAIN_VOLUME_UM3 = 100 * 100 * 100  # µm³
-DOMAIN_SIZE_UM    = 100.0            # domain side length in µm (cube assumed)
+DOMAIN_VOLUME_UM3 =  50 * 50 * 50#100 * 100 * 100  # µm³
+DOMAIN_SIZE_UM    = 50.0            # domain side length in µm (cube assumed)
 
 
 def read_xyzr(filename):

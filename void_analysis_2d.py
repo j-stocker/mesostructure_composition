@@ -4,7 +4,10 @@ import os
 import numpy as np
 from tabulate import tabulate
 
+
 OUTPUT_FILE = "void_statistics_2D.txt"
+
+
 
 DENSITY_KG_M3 = 1.95 * 1000  # 1950 kg/m³
 
@@ -113,14 +116,14 @@ def process_dataset(dataset_path):
         return f"{val:.4e}" if sci else f"{val:.4f}"
 
     return [
-        str(dataset_name),
+        dataset_name,
         fmt(AP_mwd),
         fmt(void_fraction),
-        fmt(V_over_S * 1e6),
+        fmt(V_over_S * 1e6),   # µm
         fmt(V_over_S, sci=True),
         fmt(mass_per_surface, sci=True),
         fmt(specific_surface, sci=True),
-        str(manual_value),   # <-- force to string
+        manual_value,
     ]
 
 
@@ -131,16 +134,8 @@ def main():
         d for d in os.listdir(base_dir)
         if os.path.isdir(os.path.join(base_dir, d))
     )
-    print(f"Looking in: {base_dir}")
-    print(f"Datasets found: {datasets}")
-
-    for d in datasets:
-        path = os.path.join(base_dir, d)
-        files = os.listdir(path)
-        print(f"\n{d}: {files}")
 
     rows = []
-    
     for d in datasets:
         result = process_dataset(os.path.join(base_dir, d))
         if result:
@@ -157,16 +152,11 @@ def main():
         "Kogha Sw (m²/kg)",
     ]
 
-
-
-    # Build colalign dynamically based on actual column count
-    num_cols = len(headers)
-    col_align = ("left",) + ("right",) * (num_cols - 1)  # or whatever alignment you want
-
     table = tabulate(
         rows,
         headers=headers,
-        tablefmt="plain",   # try "plain" instead of "grid"
+        tablefmt="simple",   # ← cleaner than "grid"
+        colalign=("left","right","right","right","right","right","right","right"),
     )
 
     print("\n" + table + "\n")

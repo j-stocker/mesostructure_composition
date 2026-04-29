@@ -128,7 +128,7 @@ def process_dataset(dataset_path):
 
 
 def main():
-    base_dir = os.path.join(os.getcwd(), "new_datasets")
+    base_dir = os.path.join(os.getcwd(), "2D_xyzrs")
 
     datasets = sorted(
         d for d in os.listdir(base_dir)

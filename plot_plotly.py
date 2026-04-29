@@ -8,14 +8,14 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
-AP_PATH   = "3D_xyzrs/example_00_AP.xyzr"
-VOID_PATH = "3D_xyzrs/example_00_void.xyzr"
+AP_PATH   = "3D_xyzrs/test3_00_AP.xyzr"
+VOID_PATH = "3D_xyzrs/test3_00_void.xyzr"
 
-PHYSICAL_SIZE = 100e-6
+PHYSICAL_SIZE = 20e-6
 IMG_SIZE      = 1.0
 
 SLICE_AXIS  = "z"
-SLICE_POS   = 0.7
+SLICE_POS   = 0.4
 
 SPHERE_RESOLUTION = 25
 ELEV   = 25

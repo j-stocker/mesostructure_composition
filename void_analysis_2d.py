@@ -4,7 +4,10 @@ import os
 import numpy as np
 from tabulate import tabulate
 
-OUTPUT_FILE = "void_statistics.txt"
+
+OUTPUT_FILE = "void_statistics_2D.txt"
+
+
 
 DENSITY_KG_M3 = 1.95 * 1000  # 1950 kg/m³
 
@@ -125,7 +128,7 @@ def process_dataset(dataset_path):
 
 
 def main():
-    base_dir = os.path.join(os.getcwd(), "new_datasets")
+    base_dir = os.path.join(os.getcwd(), "2D_xyzrs")
 
     datasets = sorted(
         d for d in os.listdir(base_dir)

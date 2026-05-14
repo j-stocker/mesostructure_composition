@@ -654,6 +654,72 @@ def mass_frac_to_vol_frac(
 
     return total_rho
 
+def mass_frac_to_vol_frac2(
+    materials_masses,  # dict: {material_name: mass_fraction}
+    materials_densities,  # dict: {material_name: density}
+    void_fraction
+):
+    """
+    Convert mass fractions to volume fractions for propellant mixtures.
+    
+    Args:
+        materials_masses: Dictionary of material names to mass fractions
+                         e.g., {'AP_coarse': 0.4, 'AP_fine': 0.2, 'Al': 0.18, 'HTPB': 0.2}
+        materials_densities: Dictionary of material names to densities (g/cm³)
+                            e.g., {'AP_coarse': 1.95, 'AP_fine': 1.95, 'Al': 2.7, 'HTPB': 0.93}
+        void_fraction: Volume fraction of voids (0 to 1)
+    
+    Returns:
+        tuple: (volume_fractions dict, total_density)
+    """
+    # Calculate volumes for each component
+    volumes = {}
+    total_mass = 0
+    
+    for material, mass in materials_masses.items():
+        if material not in materials_densities:
+            raise ValueError(f"Density not provided for material: {material}")
+        
+        volumes[material] = mass / materials_densities[material]
+        total_mass += mass
+    
+    # Total solid volume (excluding voids)
+    solid_volume = sum(volumes.values())
+    
+    # Account for void fraction
+    total_volume = solid_volume / (1 - void_fraction)
+    
+    # Calculate overall density
+    total_density = total_mass / total_volume
+    
+    # Calculate volume fractions
+    volume_fractions = {}
+    for material, vol in volumes.items():
+        volume_fractions[material] = vol / total_volume
+    
+    volume_fractions['void'] = void_fraction
+    
+    # Print results
+    print("Volume fractions (%):")
+    for material, vol_frac in volume_fractions.items():
+        print(f"  {material}: {vol_frac*100:.4f}")
+    print(f"Total density: {total_density:.2f} g/cm³")
+    
+    return volume_fractions, total_density
+
+
+materials = {
+    'AP_coarse': 0.72,
+    'HTPB': 1-0.72
+}
+
+densities = {
+    'AP_coarse': 1.95,
+    'HTPB': 0.93
+}
+
+
+
 
 if __name__ == "__main__":
     #reset()
@@ -661,8 +727,19 @@ if __name__ == "__main__":
     #generate_combined(0.296222, 0, 0.296222, 0.097, "B3", 1)
     #perc_vol = 
     #mass_frac_to_vol_frac(00, 0.8, 0.033))
-    generate_combined(0, 0.65, 0, 0.08, "porous_ex",1, 1e-4)
-    generate_combined(0, 0, 0.65, 0.08, "hollow_ex",1, 1e-4)
+    #mass_frac_to_vol_frac(0.5375, 0, 0)
+    vol_fracs, rho = mass_frac_to_vol_frac2(materials, densities, void_fraction=0.11)
+    mass_frac_to_vol_frac(
+    0,
+    0.72,
+    0.11,
+    m_HTPB=1-0.72,
+    rho_AP=1.95,
+    rho_HTPB=0.92
+)
+    
+    #generate_combined(0, 0.65, 0, 0.08, "porous_ex",1, 1e-4)
+    #generate_combined(0, 0, 0.65, 0.08, "hollow_ex",1, 1e-4)
     #generate_combined(0, 0.3, 0, 0.033, "porous_80_by_weight", 1, 5e-4)
     #generate_combined(0, 0.0, 0.5, 0.024, "porous_80", 1, 0.0002)
     

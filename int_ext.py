@@ -1,75 +1,3 @@
-#sphere packing, updated to handle 2D or 3D — parallelized version
-# FIXES applied (v2-v5): see original header
-# FIXES applied (v7):
-#   FIX-S  Porous grain overlap factor tightened from 0.95 → 0.98 in both 2D and 3D,
-#          matching the solid grain tolerance and eliminating visible grain overlap.
-#          max_pos bumped from 100/300 → 150/500 to compensate for tighter packing.
-# FIXES applied (v6):
-#   FIX-O  Per-grain void volume is now TRACKED CUMULATIVELY across both the initial
-#          placement pass and every top-up round.  Previously the cap was only enforced
-#          on the budget handed to each call, so a grain that received multiple top-up
-#          calls could accumulate far more than MAX_VOID_FRACTION_PER_GRAIN.
-#   FIX-P  _place_voids_in_grain_fast and _place_voids_in_grain_2d no longer apply
-#          the cap internally — the caller owns the cap via per_grain_placed tracking.
-#          This avoids double-capping and makes the accounting authoritative in one place.
-#   FIX-Q  Top-up budget for each grain is now:
-#            min(remaining_global, cap - already_placed_for_this_grain)
-#          so no grain can ever exceed the cap regardless of how many passes run.
-#   FIX-R  Grains are marked exhausted when their cap is reached, not only when a
-#          placement attempt returns zero — prevents wasted attempts on full grains.
-# FIXES applied (v8):
-#   FIX-W  Neighbor lookup window radius now scales with the query grain radius instead
-#          of being hard-coded to +-1 cell.  Previously, when a grain's diameter exceeded
-#          cell_size (= mean_rad_solid * 4), grains sitting 2+ cells away were invisible
-#          to the overlap check and could be placed overlapping.  The window is now
-#          ceil((r_query + max_placed_r) / cell_size), guaranteeing all grains within
-#          interaction range are examined.  Applies to both 2D and 3D branches.
-#
-# PERF changes (no logic changes):
-#   PERF-1  _place_voids_in_grain_fast: candidate arrays pre-allocated once per call
-#           instead of reallocated every iteration.  Same values, same selection logic.
-#   PERF-2  3D void placement loop parallelized with ProcessPoolExecutor, mirroring
-#           the existing 2D ThreadPoolExecutor pattern exactly.
-#   PERF-3  nearby_3d / nearby_2d converted from generators to list-returning functions
-#           to eliminate per-item generator frame overhead (list() was called anyway).
-#   PERF-4  overlaps_fast / overlaps_fast_3d accept a pre-built numpy array so the
-#           np.array() conversion isn't repeated on every call inside the placement loop.
-#           Callers updated to pass np.array(neighbors) once per neighbor snapshot.
-#   PERF-5  save_xyzr uses writelines() with a pre-built list instead of one write()
-#           per particle.
-#   PERF-6  mean_weight_diameter accepts an optional radii array to skip re-reading
-#           the file when the data is already in memory.
-# FIXES applied (v9):
-#   FIX-X  Hollow grain void volume now counted as full sphere (4/3*pi*rv**3) regardless
-#          of grain position, removing clipped_sphere_volume undercounting that caused
-#          void fraction overshoot.  Early-stop guard added so hollow void placement
-#          halts as soon as void_fraction target is reached.
-# FIXES applied (v10):
-#   FIX-Y  Added pore_placement parameter ("int" | "ext") to both void placement
-#          functions and all callers.
-#          "int" (default): original behaviour — void centers sampled uniformly inside
-#                           the grain; full void sphere must fit within grain boundary.
-#          "ext": void centers placed in the outer shell of the grain
-#                 (rho in [shell_inner_frac * pr, pr + pore_r]) so pores straddle the
-#                 grain surface.  Only the sphere–sphere intersection volume (grain ∩ void)
-#                 is counted against the void-fraction budget and stored; the void sphere
-#                 center and radius are stored as-is so the caller can reconstruct the
-#                 partial geometry.  Void budget accounting uses the clipped volume so
-#                 targets remain consistent with "int" mode.
-# FIXES applied (v11):
-#   FIX-Z  compute_ap_volume_fraction_clipped now works entirely in physical units
-#          (metres) and accepts a dim parameter (2 or 3) so that 2D runs use
-#          physical_size**2 as the domain area instead of physical_size**3.
-#          Previously the function applied a scale = img_size / physical_size factor
-#          (e.g. 1 / 20e-6 = 50000) to coordinates that were already in physical units,
-#          shrinking all radii by that factor and producing an AP fraction ~0 instead of
-#          the true ~0.3, causing every 2D attempt to be rejected.
-# FIXES applied (v12):
-#   FIX-AA In "ext" pore placement mode, the validity mask now requires that each pore
-#          actually reaches the grain surface: dist_from_center + pore_r >= pr.
-#          Previously only grain overlap was checked (dist < pr + pore_r), so pores
-#          whose centers landed deep in the shell interior could pass the filter without
-#          ever breaking the grain boundary.  Applies to both 2D and 3D branches.
 
 import numpy as np
 import math
@@ -1259,11 +1187,11 @@ def plot_from_xyzr(ap_xyzr_path, void_xyzr_path, save_path,
 
 def main():
     generate_structures_with_target_mwd(
-        '3D_xyzrs',
+        'test_files',
         target_mwd=4.0e-6,
-        base_name="test3",
+        base_name="int_clipped_vf03_3D",
         dim=3,
-        physical_size=20e-6,
+        physical_size=50e-6,
         mean_rad_porous = 2e-6 / (1.2 * math.exp(math.sqrt(math.log(1 + 0.4 ** 2)) ** 2)), #target mwd
         mean_rad_hollow = 2.2e-6 / (1.2 * math.exp(math.sqrt(math.log(1 + 0.4 ** 2)) ** 2)),
         mean_rad_solid=2e-6,

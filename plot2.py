@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3 
+#use this one
 
 import os
 import numpy as np
@@ -12,26 +13,31 @@ import matplotlib.patches as mpatches
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
-AP_PATH   = "3D_xyzrs/test3_00_AP.xyzr"
-VOID_PATH = "3D_xyzrs/test3_00_void.xyzr"
+AP_PATH   = "test_files/htpb_only_clipped_4um_vf03_ap55_00_AP.xyzr"
+VOID_PATH = "test_files/htpb_only_clipped_4um_vf03_ap55_00_void.xyzr"
+OUTPUT_IMAGE = "test_files/images/htpb_only_clipped_4um_vf03_ap55_00.png"
 
-PHYSICAL_SIZE = 20e-6
+PHYSICAL_SIZE = 50e-6
 IMG_SIZE      = 1.0
 
 SLICE_AXIS  = "z"
 SLICE_POS   = 0.4
 
-SPHERE_RESOLUTION = 5
+SPHERE_RESOLUTION = 25
 ELEV   = 25
 AZIM   = 45
 
 AP_COLOR    = "#FF6B6B"   # red
-VOID_COLOR  = "#939494"   # grey
+VOID_COLOR  = "#000000"   # black
 PLANE_COLOR = "#FFD700"
-BG_COLOR    = "#4A90D9"  # red background for layered plot
-AP_FILL     = "#FF6B6B"   # blue for AP solid region
+BG_COLOR    = "#FFFFFF"  
+AP_FILL     = "#FF6B6B"   
 
 AP_ALPHA_3D = 1.0
+
+# Set this to True when pore_placement="htpb_only" and void_fraction_mode="clipped".
+# Voids live in the binder, so they are drawn first and AP grains are layered on top.
+HTPB_ONLY_CLIPPED = True
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -157,17 +163,27 @@ def draw_2d(ax, circles, voids):
 
 # ── 2D SLICE: layered ─────────────────────────────────────────────────────────
 
-def draw_2d_layered(ax, circles, voids):
+def draw_2d_layered(ax, circles, voids, htpb_only_clipped=False):
     """
-    Layer 1: solid red background
-    Layer 2: blue filled AP circles
-    Layer 3: grey void circles clipped to only show inside AP circles
+    Standard mode (htpb_only_clipped=False):
+      Layer 1: white background
+      Layer 2: red AP circles
+      Layer 3: black void circles, clipped to only show inside AP circles
+
+    htpb_only_clipped mode (htpb_only_clipped=True):
+      Voids live in the binder (outside AP grains), so the layer order inverts:
+      Layer 1: white background
+      Layer 2: black void circles (unclipped — they are already outside AP)
+      Layer 3: red AP circles on top
+
+      No clip-path logic is needed because voids and AP grains do not overlap
+      in htpb_only mode.
     """
     ax.set_aspect("equal")
     ax.set_xlim(IMG_SIZE, 0)
     ax.set_ylim(IMG_SIZE, 0)
 
-    # Layer 1: red background
+    # Background
     ax.add_patch(Rectangle((0, 0), IMG_SIZE, IMG_SIZE,
                             color=BG_COLOR, zorder=0))
 
@@ -176,28 +192,36 @@ def draw_2d_layered(ax, circles, voids):
     for (x0, y0, z0, r) in circles:
         res = slice_circle(x0, y0, z0, r, "z", SLICE_POS)
         if res:
-            ap_sliced.append(res)  # (cx, cy, cr)
+            ap_sliced.append(res)
 
     void_sliced = []
     for (x0, y0, z0, r) in voids:
         res = slice_circle(x0, y0, z0, r, "z", SLICE_POS)
         if res:
-            void_sliced.append(res)  # (cx, cy, cr)
+            void_sliced.append(res)
 
-    # Layer 2: red AP circles
-    for (cx, cy, cr) in ap_sliced:
-        ax.add_patch(Circle((cx, cy), cr, color=AP_FILL, zorder=1, linewidth=0))
-
-    # Layer 3: grey voids — only where they overlap an AP circle
-    # We use clipping: draw each void circle clipped to each AP circle it intersects
-    for (vcx, vcy, vcr) in void_sliced:
+    if htpb_only_clipped:
+        # Voids first (binder space), then AP on top
+        for (vcx, vcy, vcr) in void_sliced:
+            ax.add_patch(Circle((vcx, vcy), vcr, color=VOID_COLOR,
+                                zorder=1, linewidth=0))
         for (acx, acy, acr) in ap_sliced:
-            if circles_intersect(vcx, vcy, vcr, acx, acy, acr):
-                # Draw the void circle with a clip path set to the AP circle
-                void_patch = Circle((vcx, vcy), vcr, color=VOID_COLOR, zorder=2)
-                clip_patch = Circle((acx, acy), acr, transform=ax.transData)
-                ax.add_patch(void_patch)
-                void_patch.set_clip_path(clip_patch)
+            ax.add_patch(Circle((acx, acy), acr, color=AP_FILL,
+                                zorder=2, linewidth=0))
+    else:
+        # AP first, then voids clipped to AP boundaries
+        for (acx, acy, acr) in ap_sliced:
+            ax.add_patch(Circle((acx, acy), acr, color=AP_FILL,
+                                zorder=1, linewidth=0))
+        for (vcx, vcy, vcr) in void_sliced:
+            for (acx, acy, acr) in ap_sliced:
+                if circles_intersect(vcx, vcy, vcr, acx, acy, acr):
+                    void_patch = Circle((vcx, vcy), vcr, color=VOID_COLOR,
+                                        zorder=2, linewidth=0)
+                    clip_patch = Circle((acx, acy), acr,
+                                        transform=ax.transData)
+                    ax.add_patch(void_patch)
+                    void_patch.set_clip_path(clip_patch)
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 
@@ -220,11 +244,12 @@ def main():
 
     # Layered 2D slice
     ax2d_l = fig.add_subplot(133)
-    draw_2d_layered(ax2d_l, circles, voids)
-    ax2d_l.set_title("2D slice (layered)")
+    draw_2d_layered(ax2d_l, circles, voids, htpb_only_clipped=HTPB_ONLY_CLIPPED)
+    title = "2D slice (htpb_only clipped)" if HTPB_ONLY_CLIPPED else "2D slice (layered)"
+    ax2d_l.set_title(title)
 
     plt.tight_layout()
-    plt.savefig("3D_xyzrs/example.png", dpi=300)
+    plt.savefig(OUTPUT_IMAGE, dpi=300)
     plt.show()
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ DENSITY_KG_M3 = 1.95 * 1000  # 1950 kg/m³
 # "clipped"   : only count the portion of each void that is inside an AP grain
 #               (void ∩ AP intersection volume/area); void material outside all
 #               AP grains is ignored entirely.
-VOID_MODE = "unclipped"
+VOID_MODE = "overlay"
 # ─────────────────────────────────────────────────────────────────────────────
 
 MANUAL_VALUES = {
@@ -95,12 +95,6 @@ def clipped_surface_areas(xyzr, lo=0.0, hi=None):
 # ── Sphere–sphere intersection geometry ──────────────────────────────────────
 
 def sphere_sphere_intersection_volume(d, r1, r2):
-    """
-    Volume of the intersection (lens) of two spheres.
-    d  = distance between centers
-    r1, r2 = radii
-    All inputs are scalars or broadcastable arrays.
-    """
     d  = np.asarray(d,  dtype=float)
     r1 = np.asarray(r1, dtype=float)
     r2 = np.asarray(r2, dtype=float)
@@ -129,9 +123,6 @@ def sphere_sphere_intersection_volume(d, r1, r2):
 
 
 def sphere_sphere_intersection_surface(d, r_void, r_ap):
-    """
-    Surface area of the void sphere that lies INSIDE the AP sphere.
-    """
     d      = np.asarray(d,      dtype=float)
     r_void = np.asarray(r_void, dtype=float)
     r_ap   = np.asarray(r_ap,   dtype=float)
@@ -154,14 +145,6 @@ def sphere_sphere_intersection_surface(d, r_void, r_ap):
 # ── Aggregate void metrics with AP-intersection clipping ─────────────────────
 
 def void_metrics_clipped(void_xyzr, AP_xyzr, chunk_size=500):
-    """
-    For each void sphere, sum its intersection volume and interior surface area
-    across ALL overlapping AP grains, then cap each void's contribution at its
-    full sphere volume/area to avoid double-counting at grain boundaries.
-
-    Processed in chunks of `chunk_size` voids to keep memory bounded.
-    Returns (total_volume_um3, total_surface_area_um2).
-    """
     if len(void_xyzr) == 0 or len(AP_xyzr) == 0:
         return 0.0, 0.0
 
@@ -178,7 +161,6 @@ def void_metrics_clipped(void_xyzr, AP_xyzr, chunk_size=500):
     for start in range(0, n_voids, chunk_size):
         end = min(start + chunk_size, n_voids)
 
-        # (chunk, N_grains)
         d = np.sqrt(
             (vx[start:end, None] - ax[None, :])**2 +
             (vy[start:end, None] - ay[None, :])**2 +
@@ -188,11 +170,60 @@ def void_metrics_clipped(void_xyzr, AP_xyzr, chunk_size=500):
         vol_matrix  = sphere_sphere_intersection_volume(d, vr[start:end, None], ar[None, :])
         area_matrix = sphere_sphere_intersection_surface(d, vr[start:end, None], ar[None, :])
 
-        # Sum over grains, cap at full sphere
         total_vol  += np.sum(np.minimum(vol_matrix.sum(axis=1),  full_vol[start:end]))
         total_area += np.sum(np.minimum(area_matrix.sum(axis=1), full_area[start:end]))
 
     return total_vol, total_area
+
+
+# ── Particle size distribution stats ─────────────────────────────────────────
+
+def psd_stats(AP_xyzr):
+    """
+    Compute particle size distribution statistics from AP grain radii.
+    All outputs in µm (diameters).
+    """
+    if len(AP_xyzr) == 0:
+        return {}
+
+    d = 2 * AP_xyzr[:, 3]   # diameters in µm
+
+    # Fit lognormal: mu_ln and sigma_ln of log(d)
+    ln_d     = np.log(d)
+    mu_ln    = ln_d.mean()
+    sigma_ln = ln_d.std(ddof=1)
+    rad_dev  = math.sqrt(math.exp(sigma_ln**2) - 1)
+
+    # The generator uses: mu_ln_placed = log(mean_rad_input) - 1.5*sigma_ln^2
+    # So: mean_rad_input = exp(mu_ln_placed + 1.5*sigma_ln^2)
+    # mu_ln here is for diameter, so mean_rad_input (radius) = exp(mu_ln)/2 * exp(1.5*sigma_ln^2)
+    mean_rad_input = (math.exp(mu_ln) / 2) * math.exp(1.5 * sigma_ln**2)
+
+    # MWD = 2 * sum(r^3) / sum(r^2)  [from code]
+    r   = d / 2
+    mwd = 2 * np.sum(r**3) / np.sum(r**2)
+
+    # Percentiles
+    p5, p10, p25, p50, p75, p90, p95 = np.percentile(d, [5, 10, 25, 50, 75, 90, 95])
+
+    return {
+        "n_grains":        len(d),
+        "d_min":           d.min(),
+        "d_max":           d.max(),
+        "d_mean":          d.mean(),
+        "d_median":        p50,
+        "d_std":           d.std(ddof=1),
+        "d_p5":            p5,
+        "d_p10":           p10,
+        "d_p25":           p25,
+        "d_p75":           p75,
+        "d_p90":           p90,
+        "d_p95":           p95,
+        "mwd_um":          mwd,
+        "sigma_ln":        sigma_ln,
+        "rad_dev":         rad_dev,
+        "mean_rad_input":  mean_rad_input,   # µm
+    }
 
 
 def main():
@@ -206,7 +237,8 @@ def main():
         key = f.replace("_AP.xyzr", "").replace("_void.xyzr", "")
         datasets.setdefault(key, []).append(f)
 
-    rows = []
+    rows     = []
+    psd_rows = []
 
     print(f"\nVOID_MODE = {VOID_MODE!r}")
     print("  clipped   → void volume/area = portion inside AP grains only")
@@ -233,18 +265,16 @@ def main():
         AP_d   = 2 * AP_r
         AP_mwd = np.sum(AP_d**3) / np.sum(AP_d**2)
 
-        # ---- AP volume fraction (domain-clipped, µm units) ---------------
+        # ---- AP volume fraction ------------------------------------------
         AP_vol_frac = (clipped_sphere_volumes(AP_xyzr, lo=0.0, hi=DOMAIN_SIZE_UM).sum()
                        / DOMAIN_VOLUME_UM3 * 100)
 
-        # ---- Void metrics — computed ONCE in µm, scaled to SI ------------
-        # This avoids calling void_metrics_clipped twice per dataset.
+        # ---- Void metrics ------------------------------------------------
         if has_voids:
             if VOID_MODE == "clipped":
                 void_vol_um3, void_area_um2 = void_metrics_clipped(void_xyzr, AP_xyzr)
-                # Convert to SI for V/S calculation
-                A_void = void_vol_um3  * 1e-18   # µm³ → m³
-                P_void = void_area_um2 * 1e-12   # µm² → m²
+                A_void = void_vol_um3  * 1e-18
+                P_void = void_area_um2 * 1e-12
             else:
                 void_vol_um3 = clipped_sphere_volumes(
                     void_xyzr, lo=0.0, hi=DOMAIN_SIZE_UM).sum()
@@ -257,7 +287,7 @@ def main():
             void_fraction = 0.0
             A_void = P_void = 0.0
 
-        # ---- V/S calculation (SI units) ----------------------------------
+        # ---- V/S ---------------------------------------------------------
         hi_m      = DOMAIN_SIZE_UM * 1e-6
         AP_xyzr_m = AP_xyzr * 1e-6
 
@@ -289,6 +319,26 @@ def main():
             manual_value,
         ])
 
+        # ---- PSD stats ---------------------------------------------------
+        psd = psd_stats(AP_xyzr)
+        if psd:
+            psd_rows.append([
+                key,
+                f"{psd['n_grains']}",
+                f"{psd['d_min']:.1f}",
+                f"{psd['d_max']:.1f}",
+                f"{psd['d_mean']:.1f}",
+                f"{psd['d_median']:.1f}",
+                f"{psd['d_std']:.1f}",
+                f"{psd['d_p5']:.1f}",
+                f"{psd['d_p95']:.1f}",
+                f"{psd['mwd_um']:.1f}",
+                f"{psd['sigma_ln']:.3f}",
+                f"{psd['rad_dev']:.3f}",
+                f"{psd['mean_rad_input']:.2f}",
+            ])
+
+    # ── Print main table ──────────────────────────────────────────────────────
     headers = [
         "Dataset",
         "AP_mwd (µm)",
@@ -304,9 +354,32 @@ def main():
     table = tabulate(rows, headers=headers, tablefmt="simple")
     print("\n" + table + "\n")
 
+    # ── Print PSD table ───────────────────────────────────────────────────────
+    psd_headers = [
+        "Dataset",
+        "N",
+        "d_min (µm)",
+        "d_max (µm)",
+        "d_mean (µm)",
+        "d_median (µm)",
+        "d_std (µm)",
+        "d_p5 (µm)",
+        "d_p95 (µm)",
+        "MWD (µm)",
+        "sigma_ln",
+        "rad_dev",
+        "mean_rad_input (µm)",
+    ]
+
+    psd_table = tabulate(psd_rows, headers=psd_headers, tablefmt="simple")
+    print("\nPARTICLE SIZE DISTRIBUTION\n" + psd_table + "\n")
+
+    # ── Save ─────────────────────────────────────────────────────────────────
     with open(OUTPUT_FILE, "w") as fh:
         fh.write(f"VOID_MODE = {VOID_MODE}\n\n")
-        fh.write(table + "\n")
+        fh.write(table + "\n\n")
+        fh.write("PARTICLE SIZE DISTRIBUTION\n")
+        fh.write(psd_table + "\n")
 
     if len(AP_xyzr) > 0:
         print(f"DEBUG raw AP vol sum: {clipped_sphere_volumes(AP_xyzr, lo=0.0, hi=DOMAIN_SIZE_UM).sum():.4f}")

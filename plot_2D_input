@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+
+import os
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle, Rectangle
+
+AP_PATH   = "test_files/htpb_only_unclipped_4um_vf03_ap55_00_AP.xyzr"
+VOID_PATH = "test_files/htpb_only_unclipped_4um_vf03_ap55_00_void.xyzr"
+OUTPUT_IMAGE = "test_files/images/binder_unclipped_input.png"
+
+PHYSICAL_SIZE = 200e-6          # full domain is 200x200x200
+IMG_W, IMG_H  = 200.0, 50.0    # set to (200.0, 200.0) for a square image
+
+SLICE_AXIS = "z"
+SLICE_POS  = 20
+
+MODE = "overlay"  # "clipped", "overlay", or "htpb_clipped"
+
+AP_COLOR   = (1.0, 0.0, 0.0)
+VOID_COLOR = (0.0, 0.0, 0.0)
+BG_COLOR   = (0.0, 0.0, 1.0)
+
+
+def read_xyzr(path, physical_size, img_w, img_h):
+    pts = []
+    if not os.path.exists(path):
+        return pts
+    scale_x = img_w / physical_size
+    scale_y = img_h / physical_size
+    with open(path) as f:
+        for line in f:
+            vals = line.split()
+            if len(vals) >= 4:
+                x, y, z, r = map(float, vals[:4])
+                pts.append((x*scale_x, y*scale_y, z*scale_x, r*scale_x))
+    return pts
+
+
+def slice_circle(x0, y0, z0, r, axis, pos):
+    if axis == "x":
+        d = abs(pos - x0); cx, cy = y0, z0
+    elif axis == "y":
+        d = abs(pos - y0); cx, cy = x0, z0
+    else:
+        d = abs(pos - z0); cx, cy = x0, y0
+    if d >= r:
+        return None
+    return cx, cy, np.sqrt(r*r - d*d)
+
+
+def circles_intersect(cx1, cy1, cr1, cx2, cy2, cr2):
+    return np.hypot(cx1 - cx2, cy1 - cy2) < (cr1 + cr2)
+
+
+def main():
+    ap    = read_xyzr(AP_PATH, PHYSICAL_SIZE, IMG_W, IMG_H)
+    voids = read_xyzr(VOID_PATH, PHYSICAL_SIZE, IMG_W, IMG_H)
+
+    aspect = IMG_W / IMG_H
+    fig, ax = plt.subplots(figsize=(6 * aspect, 6))
+    ax.set_aspect("equal")
+    ax.set_xlim(0, IMG_W)
+    ax.set_ylim(0, IMG_H)
+    ax.axis("off")
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+    ax.add_patch(Rectangle((0, 0), IMG_W, IMG_H, color=BG_COLOR, zorder=0))
+
+    ap_sliced   = [r for x0,y0,z0,r0 in ap    if (r := slice_circle(x0,y0,z0,r0,SLICE_AXIS,SLICE_POS))]
+    void_sliced = [r for x0,y0,z0,r0 in voids if (r := slice_circle(x0,y0,z0,r0,SLICE_AXIS,SLICE_POS))]
+
+    for x, y, r in ap_sliced:
+        ax.add_patch(Circle((x, y), r, facecolor=AP_COLOR, edgecolor="none", zorder=1))
+
+    if MODE == "clipped":
+        for vx, vy, vr in void_sliced:
+            for axc, ayc, ar in ap_sliced:
+                if circles_intersect(vx, vy, vr, axc, ayc, ar):
+                    clip = Circle((axc, ayc), ar, transform=ax.transData)
+                    p = Circle((vx, vy), vr, facecolor=VOID_COLOR, edgecolor="none", zorder=2)
+                    ax.add_patch(p)
+                    p.set_clip_path(clip)
+
+    elif MODE == "overlay":
+        for x, y, r in void_sliced:
+            ax.add_patch(Circle((x, y), r, facecolor=VOID_COLOR, edgecolor="none", zorder=2))
+
+    elif MODE == "htpb_clipped":
+        for vx, vy, vr in void_sliced:
+            if not any(circles_intersect(vx, vy, vr, axc, ayc, ar) for axc, ayc, ar in ap_sliced):
+                ax.add_patch(Circle((vx, vy), vr, facecolor=VOID_COLOR, edgecolor="none", zorder=2))
+
+    plt.savefig(OUTPUT_IMAGE, dpi=300, bbox_inches="tight", pad_inches=0)
+
+
+if __name__ == "__main__":
+    main()

@@ -124,6 +124,12 @@
 #          than only the host grain.  This matches the void_statistics_3D.py accounting
 #          so that input void_fraction == output void_fraction.  all_grains_arr is now
 #          passed from the parallel executor and top-up loop to _place_voids_in_grain_fast.
+# FIXES applied (v19):
+#   FIX-AH Non-cubic domain support.  physical_size now accepts a scalar (as before) or
+#          a 3-tuple (px, py, pz).  Internally the longest axis maps to img_size=1 and
+#          all other axes scale proportionally.  All placement draws, boundary checks,
+#          and volume calculations use per-axis bounds.  save_xyzr, load_xyzr, and
+#          compute_ap_volume_fraction_clipped updated accordingly.
 
 import numpy as np
 import math
@@ -139,19 +145,49 @@ MAX_VOID_FRACTION_PER_GRAIN = 0.20
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _norm_physical_size(physical_size):
+    """Return physical_size as a 3-tuple (px, py, pz)."""
+    if np.isscalar(physical_size):
+        return (physical_size, physical_size, physical_size)
+    t = tuple(physical_size)
+    if len(t) == 2:
+        return (t[0], t[1], t[1])
+    return t
+
+
+def _img_sizes(physical_size):
+    """
+    Map physical_size tuple to normalised image-space sizes.
+    Longest physical axis → 1.0; others scale proportionally.
+    Returns (img_size_x, img_size_y, img_size_z, max_phys).
+    """
+    px, py, pz = _norm_physical_size(physical_size)
+    max_phys = max(px, py, pz)
+    return px / max_phys, py / max_phys, pz / max_phys, max_phys
+
+
+# ---------------------------------------------------------------------------
 # File I/O
 # ---------------------------------------------------------------------------
 
 def save_xyzr(particles, filepath, img_size, physical_size):
-    scale = physical_size / img_size
+    physical_size = _norm_physical_size(physical_size)
+    if np.isscalar(img_size):
+        img_size = (img_size, img_size, img_size)
+    sx = physical_size[0] / img_size[0]
+    sy = physical_size[1] / img_size[1]
+    sz = physical_size[2] / img_size[2]
     lines = []
     for p in particles:
         if len(p) == 3:
             x, y, r = p
-            lines.append(f"{x*scale:.8e} {y*scale:.8e} 0.0 {r*scale:.8e}\n")
+            lines.append(f"{x*sx:.8e} {y*sy:.8e} 0.0 {r*sx:.8e}\n")
         else:
             x, y, z, r = p
-            lines.append(f"{x*scale:.8e} {y*scale:.8e} {z*scale:.8e} {r*scale:.8e}\n")
+            lines.append(f"{x*sx:.8e} {y*sy:.8e} {z*sz:.8e} {r*sx:.8e}\n")
     with open(filepath, 'w') as f:
         f.writelines(lines)
 
@@ -165,24 +201,24 @@ def mean_weight_diameter(filename, radii=None):
 
 def load_xyzr(filepath, physical_size, img_size=1.0, dim=3):
     """
-    Load xyzr file in physical units and convert to normalized image units.
+    Load xyzr file in physical units and convert to normalised image units.
 
     Returns:
         2D: [(x,y,r), ...]
         3D: [(x,y,z,r), ...]
     """
+    physical_size = _norm_physical_size(physical_size)
+    if np.isscalar(img_size):
+        img_size = (img_size, img_size, img_size)
 
     data = np.loadtxt(filepath)
-
     if data.ndim == 1:
         data = data.reshape(1, -1)
 
-    scale = img_size / physical_size
-
-    x = data[:, 0] * scale
-    y = data[:, 1] * scale
-    z = data[:, 2] * scale
-    r = data[:, 3] * scale
+    x = data[:, 0] * (img_size[0] / physical_size[0])
+    y = data[:, 1] * (img_size[1] / physical_size[1])
+    z = data[:, 2] * (img_size[2] / physical_size[2])
+    r = data[:, 3] * (img_size[0] / physical_size[0])  # r scaled by x-axis
 
     if dim == 2:
         return [(x[i], y[i], r[i]) for i in range(len(r))]
@@ -195,15 +231,14 @@ def classify_loaded_particles(all_particles, dim, mean_rad_porous,
     """
     Split loaded AP grains into porous vs non-porous using radius threshold.
     """
-
-    thresh = (mean_rad_porous / physical_size) * img_size * 1.5
+    physical_size = _norm_physical_size(physical_size)
+    thresh = (mean_rad_porous / physical_size[0]) * (img_size if np.isscalar(img_size) else img_size[0]) * 1.5
 
     porous = []
     nonporous = []
 
     for p in all_particles:
         r = p[-1]
-
         if r <= thresh:
             porous.append(p)
         else:
@@ -247,6 +282,22 @@ def _circle_circle_intersection_area_2d(d, r1, r2):
 
 
 # ---------------------------------------------------------------------------
+# clipped_sphere_volume (top-level, per-axis hi bounds)
+# ---------------------------------------------------------------------------
+
+def clipped_sphere_volume(x, y, z, r, lo=0.0, hi_x=1.0, hi_y=1.0, hi_z=1.0):
+    def cap(h):
+        if h <= 0:   return 0.0
+        if h >= 2*r: return 4/3 * math.pi * r**3
+        return math.pi * h**2 * (3*r - h) / 3
+    V  = 4/3 * math.pi * r**3
+    V -= cap(r - (x - lo));  V -= cap(r - (hi_x - x))
+    V -= cap(r - (y - lo));  V -= cap(r - (hi_y - y))
+    V -= cap(r - (z - lo));  V -= cap(r - (hi_z - z))
+    return max(V, 0.0)
+
+
+# ---------------------------------------------------------------------------
 # Fast void placement (3D) - vectorized
 # FIX-AF: In "clipped" mode, cum_vol accumulates grain∩void intersection volume
 #         so that the budget (target_vol = void_fraction * domain_vol) is met
@@ -281,6 +332,12 @@ def _place_voids_in_grain_fast(grain, target_vol, rng_seed, img_size=1,
     phi_buf   = np.empty(n_cands)
     theta_buf = np.empty(n_cands)
     rho_buf   = np.empty(n_cands)
+
+    # img_size may be a scalar (legacy) or tuple; normalise for boundary checks
+    if np.isscalar(img_size):
+        isx = isy = isz = float(img_size)
+    else:
+        isx, isy, isz = float(img_size[0]), float(img_size[1]), float(img_size[2])
 
     for _ in range(800):
         if cum_vol >= target_vol:
@@ -321,9 +378,9 @@ def _place_voids_in_grain_fast(grain, target_vol, rng_seed, img_size=1,
             dist_from_center = np.sqrt((cands_x-px)**2 + (cands_y-py)**2 + (cands_z-pz)**2)
             valid_mask = dist_from_center + pore_r <= pr
 
-            valid_mask &= (cands_x - pore_r >= 0) & (cands_x + pore_r <= img_size)
-            valid_mask &= (cands_y - pore_r >= 0) & (cands_y + pore_r <= img_size)
-            valid_mask &= (cands_z - pore_r >= 0) & (cands_z + pore_r <= img_size)
+            valid_mask &= (cands_x - pore_r >= 0) & (cands_x + pore_r <= isx)
+            valid_mask &= (cands_y - pore_r >= 0) & (cands_y + pore_r <= isy)
+            valid_mask &= (cands_z - pore_r >= 0) & (cands_z + pore_r <= isz)
 
         elif pore_placement == "ext":
             local_rng.random(out=phi_buf)
@@ -344,9 +401,9 @@ def _place_voids_in_grain_fast(grain, target_vol, rng_seed, img_size=1,
             valid_mask = dist_from_center < pr + pore_r
             valid_mask &= dist_from_center + pore_r >= pr
 
-            valid_mask &= (cands_x >= 0) & (cands_x <= img_size)
-            valid_mask &= (cands_y >= 0) & (cands_y <= img_size)
-            valid_mask &= (cands_z >= 0) & (cands_z <= img_size)
+            valid_mask &= (cands_x >= 0) & (cands_x <= isx)
+            valid_mask &= (cands_y >= 0) & (cands_y <= isy)
+            valid_mask &= (cands_z >= 0) & (cands_z <= isz)
 
             pore_vol = None
 
@@ -356,9 +413,9 @@ def _place_voids_in_grain_fast(grain, target_vol, rng_seed, img_size=1,
             local_rng.random(out=theta_buf)
             local_rng.random(out=rho_buf)
 
-            cands_x = local_rng.uniform(0, img_size, n_cands)
-            cands_y = local_rng.uniform(0, img_size, n_cands)
-            cands_z = local_rng.uniform(0, img_size, n_cands)
+            cands_x = local_rng.uniform(0, isx, n_cands)
+            cands_y = local_rng.uniform(0, isy, n_cands)
+            cands_z = local_rng.uniform(0, isz, n_cands)
 
             if all_grains_arr is not None and len(all_grains_arr) > 0:
                 gx = all_grains_arr[:, 0]
@@ -377,9 +434,9 @@ def _place_voids_in_grain_fast(grain, target_vol, rng_seed, img_size=1,
             else:
                 valid_mask = np.ones(n_cands, dtype=bool)
 
-            valid_mask &= (cands_x >= pore_r) & (cands_x <= img_size - pore_r)
-            valid_mask &= (cands_y >= pore_r) & (cands_y <= img_size - pore_r)
-            valid_mask &= (cands_z >= pore_r) & (cands_z <= img_size - pore_r)
+            valid_mask &= (cands_x >= pore_r) & (cands_x <= isx - pore_r)
+            valid_mask &= (cands_y >= pore_r) & (cands_y <= isy - pore_r)
+            valid_mask &= (cands_z >= pore_r) & (cands_z <= isz - pore_r)
 
             pore_vol = None
 
@@ -507,14 +564,26 @@ def gen_struct_combined_2or3D(
     if dim not in (2, 3):
         raise ValueError("Dimension must be 2 or 3.")
 
+    # --- Normalise physical_size; derive per-axis image-space sizes ----------
+    physical_size = _norm_physical_size(physical_size)
+    px_size, py_size, pz_size = physical_size
+    max_phys = max(physical_size)
+    img_size_x = px_size / max_phys   # longest axis → 1.0
+    img_size_y = py_size / max_phys
+    img_size_z = pz_size / max_phys
+    img_size   = 1.0                  # kept as a shorthand for the longest axis
+    img_size_tuple = (img_size_x, img_size_y, img_size_z)
+    # -------------------------------------------------------------------------
+
     rng = np.random.default_rng()
-    img_size = 1
     margin = 0.07
 
     def generate_radii(target_fraction, mu_ln, sigma_ln, dim):
         radii = []
         total = 0.0
-        while total < target_fraction:
+        domain_vol = (img_size_x * img_size_y if dim == 2
+                      else img_size_x * img_size_y * img_size_z)
+        while total < target_fraction * domain_vol:
             r = rng.lognormal(mu_ln, sigma_ln)
             vol = math.pi * r**2 if dim == 2 else 4/3 * math.pi * r**3
             radii.append(r)
@@ -556,9 +625,9 @@ def gen_struct_combined_2or3D(
                     vy    = py + rho * math.sin(theta)
                     if math.hypot(vx - px, vy - py) + pore_r > pr:
                         continue
-                    if vx - pore_r < 0 or vx + pore_r > img_size:
+                    if vx - pore_r < 0 or vx + pore_r > img_size_x:
                         continue
-                    if vy - pore_r < 0 or vy + pore_r > img_size:
+                    if vy - pore_r < 0 or vy + pore_r > img_size_y:
                         continue
                     if any(math.hypot(vx - xv, vy - yv) < pore_r + rv
                            for xv, yv, rv in existing_voids_snap):
@@ -584,8 +653,8 @@ def gen_struct_combined_2or3D(
 
                 vmask  = ds < pr + pore_r
                 vmask &= ds + pore_r >= pr
-                vmask &= (vxs >= 0) & (vxs <= img_size)
-                vmask &= (vys >= 0) & (vys <= img_size)
+                vmask &= (vxs >= 0) & (vxs <= img_size_x)
+                vmask &= (vys >= 0) & (vys <= img_size_y)
 
                 all_placed = list(existing_voids_snap) + list(placed)
                 if all_placed:
@@ -627,8 +696,8 @@ def gen_struct_combined_2or3D(
             else:
                 # htpb_only 2D
                 n_batch = 300
-                vxs = local_rng.uniform(0, img_size, n_batch)
-                vys = local_rng.uniform(0, img_size, n_batch)
+                vxs = local_rng.uniform(0, img_size_x, n_batch)
+                vys = local_rng.uniform(0, img_size_y, n_batch)
 
                 if all_circles_snap is not None and len(all_circles_snap) > 0:
                     ac = np.array(all_circles_snap, dtype=float)
@@ -643,8 +712,8 @@ def gen_struct_combined_2or3D(
                 else:
                     vmask = np.ones(n_batch, dtype=bool)
 
-                vmask &= (vxs >= pore_r) & (vxs <= img_size - pore_r)
-                vmask &= (vys >= pore_r) & (vys <= img_size - pore_r)
+                vmask &= (vxs >= pore_r) & (vxs <= img_size_x - pore_r)
+                vmask &= (vys >= pore_r) & (vys <= img_size_y - pore_r)
 
                 all_placed = list(existing_voids_snap) + list(placed)
                 if all_placed:
@@ -677,12 +746,14 @@ def gen_struct_combined_2or3D(
     # 2-D branch
     # ------------------------------------------------------------------
     if dim == 2:
-        total_domain_area = img_size * img_size
+        total_domain_area = img_size_x * img_size_y
         target_void_area  = void_fraction * total_domain_area
         current_void_area = 0.0
 
         print(f"\n{'='*60}")
         print("TARGET PARAMETERS (2D)")
+        print(f"  Physical size:         {px_size*1e6:.1f} x {py_size*1e6:.1f} um")
+        print(f"  Image size:            {img_size_x:.4f} x {img_size_y:.4f}")
         print(f"  Target void fraction:  {void_fraction:.4f}  (of full domain)")
         print(f"  Target void area:      {target_void_area:.2e}")
         print(f"  Pore placement mode:   {pore_placement}")
@@ -693,10 +764,15 @@ def gen_struct_combined_2or3D(
         print(f"{'='*60}\n")
 
         def img_r(mu):
-            return mu / physical_size * img_size
+            return mu / max_phys * img_size
 
-        cell_size = img_r(mean_rad_solid) * 4
-        n_cells   = max(1, int(math.ceil(img_size / cell_size)))
+        cell_size = min(
+            img_size_x,
+            img_size_y,
+        ) * 0.02
+        n_cells_x = max(1, int(math.ceil(img_size_x / cell_size)))
+        n_cells_y = max(1, int(math.ceil(img_size_y / cell_size)))
+        n_cells   = max(n_cells_x, n_cells_y)  # square grid cells, extend to cover domain
         grid      = [[[] for _ in range(n_cells)] for __ in range(n_cells)]
 
         def cell_coords(x, y):
@@ -722,14 +798,14 @@ def gen_struct_combined_2or3D(
             dx = x - nb[:, 0]; dy = y - nb[:, 1]; cr = nb[:, 2]
             return np.any(dx*dx + dy*dy < ((r + cr) * factor) ** 2)
 
-        def clipped_circle_area(x, y, r, lo=0, hi=1):
+        def clipped_circle_area(x, y, r, lo=0):
             def seg(h):
                 if h <= 0: return 0.0
                 if h >= 2*r: return math.pi * r**2
                 return r**2 * math.acos((r-h)/r) - (r-h)*math.sqrt(2*r*h - h**2)
             A = math.pi * r**2
-            A -= seg(r-(x-lo)); A -= seg(r-(hi-x))
-            A -= seg(r-(y-lo)); A -= seg(r-(hi-y))
+            A -= seg(r-(x-lo)); A -= seg(r-(img_size_x-x))
+            A -= seg(r-(y-lo)); A -= seg(r-(img_size_y-y))
             return A
 
         circles = []; porous_circles = []; voids = []
@@ -745,7 +821,7 @@ def gen_struct_combined_2or3D(
             circles = load_xyzr(
                 existing_ap_xyzr,
                 physical_size,
-                img_size,
+                img_size_tuple,
                 dim=2,
             )
 
@@ -754,7 +830,7 @@ def gen_struct_combined_2or3D(
                 dim=2,
                 mean_rad_porous=mean_rad_porous,
                 physical_size=physical_size,
-                img_size=img_size,
+                img_size=img_size_tuple[0],
             )
 
             for idx, (x, y, r) in enumerate(circles):
@@ -762,8 +838,8 @@ def gen_struct_combined_2or3D(
                 grid[cx_c][cy_c].append(idx)
 
                 area = math.pi * r**2 if (
-                    x > r and x < img_size-r and
-                    y > r and y < img_size-r
+                    x > r and x < img_size_x-r and
+                    y > r and y < img_size_y-r
                 ) else clipped_circle_area(x, y, r)
 
                 existing_area += area
@@ -779,16 +855,16 @@ def gen_struct_combined_2or3D(
                 if solid_area >= vol_percent_solid: break
                 mu_ln = math.log(img_r(mean_rad_solid)) - 0.5 * sigma_ln**2
                 r = rng.lognormal(mu_ln, sigma_ln)
-                if solid_area + math.pi*r**2/total_domain_area > vol_percent_solid: continue
+                if (solid_area + math.pi*r**2) / total_domain_area > vol_percent_solid: continue
                 for _ in range(100):
-                    x = rng.uniform(-margin+r, img_size+margin-r)
-                    y = rng.uniform(-margin+r, img_size+margin-r)
+                    x = rng.uniform(-margin+r, img_size_x+margin-r)
+                    y = rng.uniform(-margin+r, img_size_y+margin-r)
                     cx_c, cy_c = cell_coords(x, y)
                     if len(grid[cx_c][cy_c]) > 15: continue
                     nb = nearby_2d(x, y, circles, r)
                     if not overlaps_fast(x, y, r, nb, 0.999):
                         circles.append((x, y, r)); grid[cx_c][cy_c].append(len(circles)-1)
-                        solid_area += math.pi*r**2 if (x>r and x<img_size-r and y>r and y<img_size-r) else clipped_circle_area(x,y,r)
+                        solid_area += math.pi*r**2 if (x>r and x<img_size_x-r and y>r and y<img_size_y-r) else clipped_circle_area(x,y,r)
                         break
             print(f"  Solid area fraction: {solid_area:.4f}")
 
@@ -802,11 +878,11 @@ def gen_struct_combined_2or3D(
         for r in hollow_radii_list:
             if hollow_area >= vol_percent_hollow: break
             if current_void_area >= target_void_area: break
-            if hollow_area + math.pi*r**2/total_domain_area > vol_percent_hollow*1.05: continue
+            if (hollow_area + math.pi*r**2) / total_domain_area > vol_percent_hollow*1.05: continue
             max_pos = 150 if hollow_area < 0.4*vol_percent_hollow else 500
             for _ in range(max_pos):
-                x = rng.uniform(-margin+r, img_size+margin-r)
-                y = rng.uniform(-margin+r, img_size+margin-r)
+                x = rng.uniform(-margin+r, img_size_x+margin-r)
+                y = rng.uniform(-margin+r, img_size_y+margin-r)
                 cx_c, cy_c = cell_coords(x, y)
                 if len(grid[cx_c][cy_c]) > 15: continue
                 nb = nearby_2d(x, y, circles, r)
@@ -814,7 +890,7 @@ def gen_struct_combined_2or3D(
                     rv = r * (void_fraction / vol_percent_hollow) ** (1/2)
                     circles.append((x, y, r)); voids.append((x, y, rv))
                     grid[cx_c][cy_c].append(len(circles)-1)
-                    hollow_area += math.pi*r**2 if (x>r and x<img_size-r and y>r and y<img_size-r) else clipped_circle_area(x,y,r)
+                    hollow_area += math.pi*r**2 if (x>r and x<img_size_x-r and y>r and y<img_size_y-r) else clipped_circle_area(x,y,r)
                     current_void_area += math.pi*rv**2
                     break
         print(f"  Hollow area fraction: {hollow_area:.4f}")
@@ -828,35 +904,37 @@ def gen_struct_combined_2or3D(
 
         for r in porous_radii_list:
             if porous_area >= vol_percent_porous: break
-            if porous_area + math.pi*r**2/total_domain_area > vol_percent_porous*1.05: continue
+            if (porous_area + math.pi*r**2) / total_domain_area > vol_percent_porous*1.05: continue
             max_pos = 150 if porous_area < 0.4*vol_percent_porous else 500
             for _ in range(max_pos):
-                x = rng.uniform(-margin+r, img_size+margin-r)
-                y = rng.uniform(-margin+r, img_size+margin-r)
+                x = rng.uniform(-margin+r, img_size_x+margin-r)
+                y = rng.uniform(-margin+r, img_size_y+margin-r)
                 cx_c, cy_c = cell_coords(x, y)
                 if len(grid[cx_c][cy_c]) > 15: continue
                 nb = nearby_2d(x, y, circles, r)
                 if not overlaps_fast(x, y, r, nb, 0.98):
                     circles.append((x, y, r)); porous_circles.append((x, y, r))
                     grid[cx_c][cy_c].append(len(circles)-1)
-                    porous_area += math.pi*r**2 if (x>r and x<img_size-r and y>r and y<img_size-r) else clipped_circle_area(x,y,r)
+                    porous_area += math.pi*r**2 if (x>r and x<img_size_x-r and y>r and y<img_size_y-r) else clipped_circle_area(x,y,r)
                     break
         print(f"  Porous area fraction: {porous_area:.4f}")
 
-        save_xyzr(circles, AP_xyzr, img_size, physical_size)
+        save_xyzr(circles, AP_xyzr, img_size_tuple, physical_size)
         if mwd_tolerance is not None:
             if using_existing_geometry:
                 existing_count = len(load_xyzr(
                     existing_ap_xyzr,
                     physical_size,
-                    img_size,
+                    img_size_tuple,
                     dim=2,
                 ))
                 new_particles = circles[existing_count:]
                 radii = np.array([r for (x, y, r) in new_particles])
             else:
                 radii = np.array([r for (x, y, r) in circles])
-            mwd_actual = mean_weight_diameter(AP_xyzr, radii=radii) * (physical_size / img_size)
+            # Convert radii back to physical for MWD check
+            radii_phys = radii * (max_phys / img_size)
+            mwd_actual = mean_weight_diameter(AP_xyzr, radii=radii_phys)
             print(f"\nMWD check: {mwd_actual:.4e} m (target {mwd_target:.4e} m)")
             if abs(mwd_actual - mwd_target) > mwd_tolerance:
                 print("MWD out of tolerance - skipping void placement.")
@@ -869,18 +947,14 @@ def gen_struct_combined_2or3D(
             print(f"\\nPlacing voids in HTPB binder space (htpb_only, "
                   f"mode={void_fraction_mode})...")
             ref_pr = img_r(mean_rad_porous)
- 
-            # Build a grain array once — updated when a void is added so the
-            # void–void grid stays current, but the grain array is fixed.
+
             all_grains_arr_2d = np.array(circles, dtype=float)  # (N, 3): x, y, r
- 
-            # Separate spatial grid for already-placed voids so the
-            # void–void overlap check is O(1) instead of O(N_voids).
+
             void_grid_2d = [[[] for _ in range(n_cells)] for __ in range(n_cells)]
             for vi, (vx_, vy_, vr_) in enumerate(voids):
                 vcx, vcy = cell_coords(vx_, vy_)
                 void_grid_2d[vcx][vcy].append(vi)
- 
+
             def nearby_voids_2d_fast(x, y, r_query):
                 max_vr = ref_pr * 0.35
                 window = max(1, math.ceil((r_query + max_vr) / cell_size))
@@ -891,61 +965,52 @@ def gen_struct_combined_2or3D(
                         for vi in void_grid_2d[i][j]:
                             result.append(voids[vi])
                 return result
- 
+
             n_batch = 512
             consecutive_failures = 0
             max_consecutive = 200
- 
-            # Pre-extract grain columns for fast numpy broadcasting
+
             if len(all_grains_arr_2d) > 0:
                 gx2 = all_grains_arr_2d[:, 0]
                 gy2 = all_grains_arr_2d[:, 1]
                 gr2 = all_grains_arr_2d[:, 2]
             else:
                 gx2 = gy2 = gr2 = np.empty(0)
- 
+
             while current_void_area < target_void_area:
                 if consecutive_failures >= max_consecutive:
                     print("WARNING: could not place more htpb voids without overlap.")
                     break
- 
+
                 pore_r = float(np.clip(
                     rng.lognormal(math.log(ref_pr * pore_radius_factor), 0.4),
                     0.1 * ref_pr, 0.35 * ref_pr))
- 
+
                 full_circle_area = math.pi * pore_r**2
                 remaining = target_void_area - current_void_area
                 if full_circle_area > remaining and void_fraction_mode == "unclipped":
                     break
- 
-                # --- Sample candidates ---
-                vxs = rng.uniform(pore_r, img_size - pore_r, n_batch)
-                vys = rng.uniform(pore_r, img_size - pore_r, n_batch)
- 
-                # --- Grain rejection (vectorized) ---
-                # Centers must be strictly outside every AP grain surface.
+
+                vxs = rng.uniform(pore_r, img_size_x - pore_r, n_batch)
+                vys = rng.uniform(pore_r, img_size_y - pore_r, n_batch)
+
                 if len(gx2) > 0:
-                    dx2d = vxs[:, None] - gx2[None, :]   # (n_batch, N_grains)
+                    dx2d = vxs[:, None] - gx2[None, :]
                     dy2d = vys[:, None] - gy2[None, :]
-                    dist2_grains = dx2d**2 + dy2d**2       # squared distances
-                    # center outside grain: dist >= grain_r  (both modes)
+                    dist2_grains = dx2d**2 + dy2d**2
                     vmask = np.all(dist2_grains >= gr2[None, :]**2, axis=1)
                 else:
                     vmask = np.ones(n_batch, dtype=bool)
- 
+
                 valid_idx = np.where(vmask)[0]
                 if len(valid_idx) == 0:
                     consecutive_failures += 1
                     continue
- 
-                # --- Void–void overlap check (vectorized per valid candidate) ---
-                # Collect nearby placed voids once per batch attempt.
-                # Use a representative center to gather neighbors; candidates
-                # are close enough that this is conservative.
+
                 rep_x = float(vxs[valid_idx[0]])
                 rep_y = float(vys[valid_idx[0]])
                 nearby_v = nearby_voids_2d_fast(rep_x, rep_y, pore_r)
- 
+
                 if nearby_v:
                     nv_arr = np.array(nearby_v, dtype=float)
                     nvx2 = nv_arr[:, 0]; nvy2 = nv_arr[:, 1]; nvr2 = nv_arr[:, 2]
@@ -954,42 +1019,33 @@ def gen_struct_combined_2or3D(
                     void_overlap = np.any(
                         ddx**2 + ddy**2 < (pore_r + nvr2[None, :])**2, axis=1)
                     valid_idx = valid_idx[~void_overlap]
- 
+
                 if len(valid_idx) == 0:
                     consecutive_failures += 1
                     continue
- 
-                # --- Budget accounting ---
+
                 if void_fraction_mode == "unclipped":
-                    # Full circle area for every valid candidate; pick first that fits.
                     pick_mask = full_circle_area <= remaining
                     if not pick_mask:
                         break
                     pick = int(valid_idx[0])
                     counted_area = full_circle_area
- 
+
                 else:
-                    # "clipped": count only the binder-side portion.
-                    # counted = full_area - sum(circle∩grain intersections)
                     if len(gx2) > 0:
-                        # Compute per-candidate binder area for all valid candidates.
                         vx_v = vxs[valid_idx]
                         vy_v = vys[valid_idx]
-                        dx_v = vx_v[:, None] - gx2[None, :]   # (n_valid, N_grains)
+                        dx_v = vx_v[:, None] - gx2[None, :]
                         dy_v = vy_v[:, None] - gy2[None, :]
-                        d_v  = np.sqrt(dx_v**2 + dy_v**2)     # dist void-center → grain-center
- 
-                        # Circle–circle intersection area for each (void, grain) pair.
-                        # Only pairs where d < pore_r + gr contribute.
-                        overlapping = d_v < pore_r + gr2[None, :]  # (n_valid, N_grains)
- 
-                        # Vectorized lens formula
+                        d_v  = np.sqrt(dx_v**2 + dy_v**2)
+
+                        overlapping = d_v < pore_r + gr2[None, :]
+
                         d_safe = np.where(overlapping, np.maximum(d_v, 1e-30), 1.0)
                         h1 = (pore_r**2 - gr2[None, :]**2 + d_v**2) / (2.0 * d_safe)
                         h1c = np.maximum(pore_r - h1,             0.0)
                         h2c = np.maximum(gr2[None, :] - (d_v - h1), 0.0)
- 
-                        # Segment areas
+
                         seg_void  = (pore_r**2 *
                                      np.arccos(np.clip((pore_r - h1c) / pore_r, -1, 1))
                                      - (pore_r - h1c) *
@@ -1000,32 +1056,29 @@ def gen_struct_combined_2or3D(
                                      - (gr2[None, :] - h2c) *
                                      np.sqrt(np.maximum(2*gr2[None, :]*h2c - h2c**2, 0)))
                         lens = seg_void + seg_grain
- 
-                        # Fully-contained case: smaller circle entirely inside larger
+
                         fully = d_v <= np.abs(pore_r - gr2[None, :])
                         small_r = np.minimum(pore_r, gr2[None, :])
                         full_contained = math.pi * small_r**2
- 
+
                         intersection = np.where(
                             ~overlapping, 0.0,
                             np.where(fully, full_contained, lens))
- 
-                        total_intersection = intersection.sum(axis=1)   # (n_valid,)
-                        # Clamp: counted area ∈ [0, full_circle_area]
+
+                        total_intersection = intersection.sum(axis=1)
                         counted_areas = np.clip(
                             full_circle_area - total_intersection,
                             0.0, full_circle_area)
                     else:
                         counted_areas = np.full(len(valid_idx), full_circle_area)
- 
+
                     fits = np.where(counted_areas <= remaining)[0]
                     if len(fits) == 0:
                         consecutive_failures += 1
                         continue
                     pick = int(valid_idx[fits[0]])
                     counted_area = float(counted_areas[fits[0]])
- 
-                # --- Accept the void ---
+
                 vx_new = float(vxs[pick])
                 vy_new = float(vys[pick])
                 voids.append((vx_new, vy_new, pore_r))
@@ -1034,7 +1087,7 @@ def gen_struct_combined_2or3D(
                 void_grid_2d[vcx][vcy].append(vi_new)
                 current_void_area += counted_area
                 consecutive_failures = 0
- 
+
                 if len(voids) % 500 == 0:
                     print(f"  Voids placed: {len(voids)}  "
                           f"fraction of domain: {current_void_area/total_domain_area:.4f}")
@@ -1060,8 +1113,10 @@ def gen_struct_combined_2or3D(
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     for idx, grain in enumerate(porous_circles):
                         seed = int(rng.integers(0, 2**31))
-                        fut  = executor.submit(_place_voids_in_grain_2d, grain,
-                                               list(void_snap_base), per_grain_budgets[idx], seed)
+                        all_circles_snap = list(circles)
+                        fut = executor.submit(_place_voids_in_grain_2d, grain,
+                      list(void_snap_base), per_grain_budgets[idx], seed,
+                      all_circles_snap)
                         futures_map[fut] = idx
                     for fut in concurrent.futures.as_completed(futures_map):
                         grain_idx = futures_map[fut]
@@ -1098,7 +1153,8 @@ def gen_struct_combined_2or3D(
                             continue
                         new_voids, vol_added = _place_voids_in_grain_2d(
                             porous_circles[grain_idx], list(voids), budget,
-                            int(rng.integers(0, 2**31)))
+                            int(rng.integers(0, 2**31)),
+                            list(circles))
                         voids.extend(new_voids)
                         current_void_area += vol_added
                         per_grain_placed[grain_idx] += vol_added
@@ -1121,7 +1177,7 @@ def gen_struct_combined_2or3D(
         print(f"  Error:                  {abs(void_frac_domain - void_fraction):.2e}")
         print(f"  Note: in clipped mode, numerator = grain∩void intersection area only")
         print(f"{'='*60}\n")
-        
+
         if pore_placement != "htpb_only" and vol_percent_porous > 0 and len(porous_circles) > 0:
             fracs = per_grain_placed / grain_areas
             print(f"  Per-grain void fraction - min: {fracs.min():.3f}  "
@@ -1133,19 +1189,21 @@ def gen_struct_combined_2or3D(
             else:
                 print(f"  All grains within {MAX_VOID_FRACTION_PER_GRAIN*100:.0f}% cap. OK")
 
-        save_xyzr(voids, void_xyzr, img_size, physical_size)
+        save_xyzr(voids, void_xyzr, img_size_tuple, physical_size)
         return void_frac_domain
 
     # ------------------------------------------------------------------
     # 3-D branch
     # ------------------------------------------------------------------
     else:
-        total_domain_vol = img_size ** 3
+        total_domain_vol = img_size_x * img_size_y * img_size_z
         target_void_vol  = void_fraction * total_domain_vol
         current_void_vol = 0.0
 
         print(f"\n{'='*60}")
         print("TARGET PARAMETERS (3D)")
+        print(f"  Physical size:         {px_size*1e6:.1f} x {py_size*1e6:.1f} x {pz_size*1e6:.1f} um")
+        print(f"  Image size:            {img_size_x:.4f} x {img_size_y:.4f} x {img_size_z:.4f}")
         print(f"  Target void fraction:  {void_fraction:.4f}  (of full domain)")
         print(f"  Target void vol:       {target_void_vol:.2e}")
         print(f"  Pore placement mode:   {pore_placement}")
@@ -1156,10 +1214,17 @@ def gen_struct_combined_2or3D(
         print(f"{'='*60}\n")
 
         def img_r(mu):
-            return mu / physical_size * img_size
+            return mu / max_phys * img_size
 
-        cell_size = img_r(mean_rad_solid) * 4
-        n_cells   = max(1, int(math.ceil(img_size / cell_size)))
+        cell_size = min(
+            img_size_x,
+            img_size_y,
+            img_size_z
+        ) * 0.02
+        n_cells_x = max(1, int(math.ceil(img_size_x / cell_size)))
+        n_cells_y = max(1, int(math.ceil(img_size_y / cell_size)))
+        n_cells_z = max(1, int(math.ceil(img_size_z / cell_size)))
+        n_cells   = max(n_cells_x, n_cells_y, n_cells_z)
         grid      = [[[[] for _ in range(n_cells)] for __ in range(n_cells)] for ___ in range(n_cells)]
 
         def cell_coords(x, y, z):
@@ -1186,19 +1251,17 @@ def gen_struct_combined_2or3D(
             dx = x-nb[:,0]; dy = y-nb[:,1]; dz = z-nb[:,2]; cr = nb[:,3]
             return np.any(dx*dx + dy*dy + dz*dz < ((r+cr)*factor)**2)
 
-        def clipped_sphere_volume(x, y, z, r, lo=0, hi=1):
-            def cap(h):
-                if h <= 0: return 0.0
-                if h >= 2*r: return 4/3*math.pi*r**3
-                return math.pi*h**2*(3*r-h)/3
-            V = 4/3*math.pi*r**3
-            V -= cap(r-(x-lo)); V -= cap(r-(hi-x))
-            V -= cap(r-(y-lo)); V -= cap(r-(hi-y))
-            V -= cap(r-(z-lo)); V -= cap(r-(hi-z))
-            return V
+        def _clipped_sphere_volume_local(x, y, z, r):
+            return clipped_sphere_volume(x, y, z, r,
+                                         lo=0.0,
+                                         hi_x=img_size_x,
+                                         hi_y=img_size_y,
+                                         hi_z=img_size_z)
 
         def fully_inside(x, y, z, r):
-            return (x>r and x<img_size-r and y>r and y<img_size-r and z>r and z<img_size-r)
+            return (x > r and x < img_size_x - r and
+                    y > r and y < img_size_y - r and
+                    z > r and z < img_size_z - r)
 
         spheres = []; porous_spheres = []; voids = []
         solid_vol = hollow_vol = porous_vol = 0.0
@@ -1213,7 +1276,7 @@ def gen_struct_combined_2or3D(
             spheres = load_xyzr(
                 existing_ap_xyzr,
                 physical_size,
-                img_size,
+                img_size_tuple,
                 dim=3,
             )
 
@@ -1222,7 +1285,7 @@ def gen_struct_combined_2or3D(
                 dim=3,
                 mean_rad_porous=mean_rad_porous,
                 physical_size=physical_size,
-                img_size=img_size,
+                img_size=img_size_tuple[0],
             )
 
             for idx, (x, y, z, r) in enumerate(spheres):
@@ -1232,7 +1295,7 @@ def gen_struct_combined_2or3D(
                 vol = (
                     4/3*math.pi*r**3
                     if fully_inside(x, y, z, r)
-                    else clipped_sphere_volume(x, y, z, r)
+                    else _clipped_sphere_volume_local(x, y, z, r)
                 )
 
                 existing_vol += vol
@@ -1249,17 +1312,17 @@ def gen_struct_combined_2or3D(
                 if solid_vol >= vol_percent_solid: break
                 mu_ln = math.log(img_r(mean_rad_solid)) - 1.5*sigma_ln**2
                 r = rng.lognormal(mu_ln, sigma_ln)
-                if solid_vol + 4/3*math.pi*r**3/total_domain_vol > vol_percent_solid: continue
+                if (solid_vol + 4/3*math.pi*r**3) / total_domain_vol > vol_percent_solid: continue
                 for _ in range(100):
-                    x = rng.uniform(-margin+r, img_size+margin-r)
-                    y = rng.uniform(-margin+r, img_size+margin-r)
-                    z = rng.uniform(-margin+r, img_size+margin-r)
+                    x = rng.uniform(-margin+r, img_size_x+margin-r)
+                    y = rng.uniform(-margin+r, img_size_y+margin-r)
+                    z = rng.uniform(-margin+r, img_size_z+margin-r)
                     ci, cj, ck = cell_coords(x, y, z)
                     if len(grid[ci][cj][ck]) > 20: continue
                     nb = nearby_3d(x, y, z, spheres, r)
                     if not overlaps_fast_3d(x, y, z, r, nb, 0.98):
                         spheres.append((x,y,z,r)); grid[ci][cj][ck].append(len(spheres)-1)
-                        solid_vol += 4/3*math.pi*r**3 if fully_inside(x,y,z,r) else clipped_sphere_volume(x,y,z,r)
+                        solid_vol += 4/3*math.pi*r**3 if fully_inside(x,y,z,r) else _clipped_sphere_volume_local(x,y,z,r)
                         break
         print(f"  Solid volume fraction: {solid_vol:.4f}")
 
@@ -1274,12 +1337,12 @@ def gen_struct_combined_2or3D(
 
         for r in hollow_radii_list:
             if hollow_vol >= vol_percent_hollow: break
-            if hollow_vol + 4/3*math.pi*r**3/total_domain_vol > vol_percent_hollow*1.05: continue
+            if (hollow_vol + 4/3*math.pi*r**3) / total_domain_vol > vol_percent_hollow*1.05: continue
             max_pos = 150 if hollow_vol < 0.4*vol_percent_hollow else 500
             for _ in range(max_pos):
-                x = rng.uniform(-margin+r, img_size+margin-r)
-                y = rng.uniform(-margin+r, img_size+margin-r)
-                z = rng.uniform(-margin+r, img_size+margin-r)
+                x = rng.uniform(-margin+r, img_size_x+margin-r)
+                y = rng.uniform(-margin+r, img_size_y+margin-r)
+                z = rng.uniform(-margin+r, img_size_z+margin-r)
                 ci, cj, ck = cell_coords(x, y, z)
                 if len(grid[ci][cj][ck]) > 20: continue
                 nb = nearby_3d(x, y, z, spheres, r)
@@ -1287,14 +1350,14 @@ def gen_struct_combined_2or3D(
                     spheres.append((x,y,z,r))
                     hollow_candidates.append((x,y,z,r))
                     grid[ci][cj][ck].append(len(spheres)-1)
-                    hollow_vol += 4/3*math.pi*r**3 if fully_inside(x,y,z,r) else clipped_sphere_volume(x,y,z,r)
+                    hollow_vol += 4/3*math.pi*r**3 if fully_inside(x,y,z,r) else _clipped_sphere_volume_local(x,y,z,r)
                     break
 
         print(f"  Hollow volume fraction: {hollow_vol:.4f}")
         if len(hollow_candidates) > 0:
             total_candidate_vol = sum(
                 (4/3*math.pi*r**3 if fully_inside(x,y,z,r)
-                 else clipped_sphere_volume(x,y,z,r))
+                 else _clipped_sphere_volume_local(x,y,z,r))
                 for (x,y,z,r) in hollow_candidates
             )
             actual_hollow_frac = total_candidate_vol / total_domain_vol
@@ -1319,62 +1382,61 @@ def gen_struct_combined_2or3D(
 
         for r in porous_radii_list:
             if porous_vol >= vol_percent_porous: break
-            if porous_vol + 4/3*math.pi*r**3/total_domain_vol > vol_percent_porous*1.05: continue
+            if (porous_vol + 4/3*math.pi*r**3) / total_domain_vol > vol_percent_porous*1.05: continue
             max_pos = 150 if porous_vol < 0.4*vol_percent_porous else 500
             for _ in range(max_pos):
-                x = rng.uniform(-margin+r, img_size+margin-r)
-                y = rng.uniform(-margin+r, img_size+margin-r)
-                z = rng.uniform(-margin+r, img_size+margin-r)
+                x = rng.uniform(-margin+r, img_size_x+margin-r)
+                y = rng.uniform(-margin+r, img_size_y+margin-r)
+                z = rng.uniform(-margin+r, img_size_z+margin-r)
                 ci, cj, ck = cell_coords(x, y, z)
                 if len(grid[ci][cj][ck]) > 20: continue
                 nb = nearby_3d(x, y, z, spheres, r)
                 if not overlaps_fast_3d(x, y, z, r, nb, 0.98):
                     spheres.append((x,y,z,r)); porous_spheres.append((x,y,z,r))
                     grid[ci][cj][ck].append(len(spheres)-1)
-                    porous_vol += 4/3*math.pi*r**3 if fully_inside(x,y,z,r) else clipped_sphere_volume(x,y,z,r)
+                    porous_vol += 4/3*math.pi*r**3 if fully_inside(x,y,z,r) else _clipped_sphere_volume_local(x,y,z,r)
                     if len(porous_spheres) % 1000 == 0:
                         print(f"  Porous grains placed: {len(porous_spheres)}  volume fraction: {porous_vol:.4f}")
                     break
         print(f"  Porous volume fraction: {porous_vol:.4f}")
 
         # ---- MWD check ----
-        save_xyzr(spheres, AP_xyzr, img_size, physical_size)
+        save_xyzr(spheres, AP_xyzr, img_size_tuple, physical_size)
         if mwd_tolerance is not None:
             if using_existing_geometry:
                 existing_count = len(load_xyzr(
                     existing_ap_xyzr,
                     physical_size,
-                    img_size,
+                    img_size_tuple,
                     dim=3,
                 ))
                 new_particles = spheres[existing_count:]
                 radii = np.array([r for (x, y, z, r) in new_particles])
             else:
                 radii = np.array([r for (x, y, z, r) in spheres])
-            mwd_actual = mean_weight_diameter(AP_xyzr, radii=radii) * (physical_size / img_size)
+            radii_phys = radii * (max_phys / img_size)
+            mwd_actual = mean_weight_diameter(AP_xyzr, radii=radii_phys)
             print(f"\nMWD check: {mwd_actual:.4e} m (target {mwd_target:.4e} m)")
             if abs(mwd_actual - mwd_target) > mwd_tolerance:
                 print("MWD out of tolerance - skipping void placement.")
                 return None
 
         # ---- Void placement — three modes ----
-        try: 
+        try:
             if pore_placement == "htpb_only":
                 print(f"\\nPlacing voids in HTPB binder space (htpb_only, "
                     f"mode={void_fraction_mode})...")
                 ref_pr = img_r(mean_rad_porous)
-    
-                # Fixed grain array — centres are outside all grains in both modes.
-                all_grains_arr_3d = np.array(spheres, dtype=float)  # (N, 4): x, y, z, r
-    
-                # Spatial grid for placed voids only (void–void overlap).
+
+                all_grains_arr_3d = np.array(spheres, dtype=float)
+
                 void_grid_3d = [[[[] for _ in range(n_cells)]
                                 for __ in range(n_cells)]
                                 for ___ in range(n_cells)]
                 for vi, (vx_, vy_, vz_, vr_) in enumerate(voids):
                     vci, vcj, vck = cell_coords(vx_, vy_, vz_)
                     void_grid_3d[vci][vcj][vck].append(vi)
-    
+
                 def nearby_voids_3d_fast(x, y, z, r_query):
                     max_vr = ref_pr * 0.35
                     window = max(1, math.ceil((r_query + max_vr) / cell_size))
@@ -1386,12 +1448,11 @@ def gen_struct_combined_2or3D(
                                 for vi in void_grid_3d[i][j][k]:
                                     result.append(voids[vi])
                     return result
-    
+
                 n_batch = 512
                 consecutive_failures = 0
                 max_consecutive = 200
-    
-                # Pre-extract grain columns for broadcasting
+
                 if len(all_grains_arr_3d) > 0:
                     gx3 = all_grains_arr_3d[:, 0]
                     gy3 = all_grains_arr_3d[:, 1]
@@ -1399,48 +1460,44 @@ def gen_struct_combined_2or3D(
                     gr3 = all_grains_arr_3d[:, 3]
                 else:
                     gx3 = gy3 = gz3 = gr3 = np.empty(0)
-    
+
                 while current_void_vol < target_void_vol:
                     if consecutive_failures >= max_consecutive:
                         print("WARNING: could not place more htpb voids without overlap.")
                         break
-    
+
                     pore_r = float(np.clip(
                         rng.lognormal(math.log(ref_pr * pore_radius_factor), 0.4),
                         0.1 * ref_pr, 0.35 * ref_pr))
-    
+
                     full_sphere_vol = 4/3 * math.pi * pore_r**3
                     remaining = target_void_vol - current_void_vol
                     if full_sphere_vol > remaining and void_fraction_mode == "unclipped":
                         break
-    
-                    # --- Sample candidates ---
-                    vxs = rng.uniform(pore_r, img_size - pore_r, n_batch)
-                    vys = rng.uniform(pore_r, img_size - pore_r, n_batch)
-                    vzs = rng.uniform(pore_r, img_size - pore_r, n_batch)
-    
-                    # --- Grain rejection (vectorized) ---
-                    # Centers must be strictly outside every AP grain surface in both modes.
+
+                    vxs = rng.uniform(pore_r, img_size_x - pore_r, n_batch)
+                    vys = rng.uniform(pore_r, img_size_y - pore_r, n_batch)
+                    vzs = rng.uniform(pore_r, img_size_z - pore_r, n_batch)
+
                     if len(gx3) > 0:
-                        dx3d = vxs[:, None] - gx3[None, :]   # (n_batch, N_grains)
+                        dx3d = vxs[:, None] - gx3[None, :]
                         dy3d = vys[:, None] - gy3[None, :]
                         dz3d = vzs[:, None] - gz3[None, :]
                         dist2_grains = dx3d**2 + dy3d**2 + dz3d**2
                         vmask = np.all(dist2_grains >= gr3[None, :]**2, axis=1)
                     else:
                         vmask = np.ones(n_batch, dtype=bool)
-    
+
                     valid_idx = np.where(vmask)[0]
                     if len(valid_idx) == 0:
                         consecutive_failures += 1
                         continue
-    
-                    # --- Void–void overlap check (vectorized per valid subset) ---
+
                     rep_x = float(vxs[valid_idx[0]])
                     rep_y = float(vys[valid_idx[0]])
                     rep_z = float(vzs[valid_idx[0]])
                     nearby_v = nearby_voids_3d_fast(rep_x, rep_y, rep_z, pore_r)
-    
+
                     if nearby_v:
                         nv_arr = np.array(nearby_v, dtype=float)
                         nvx3 = nv_arr[:, 0]; nvy3 = nv_arr[:, 1]
@@ -1452,65 +1509,60 @@ def gen_struct_combined_2or3D(
                             ddx**2 + ddy**2 + ddz**2 < (pore_r + nvr3[None, :])**2,
                             axis=1)
                         valid_idx = valid_idx[~void_overlap]
-    
+
                     if len(valid_idx) == 0:
                         consecutive_failures += 1
                         continue
-    
-                    # --- Budget accounting ---
+
                     if void_fraction_mode == "unclipped":
                         if full_sphere_vol > remaining:
                             break
                         pick = int(valid_idx[0])
                         counted_vol = full_sphere_vol
-    
+
                     else:
-                        # "clipped": count only the binder-side portion.
-                        # counted = full_vol - sum(sphere∩grain intersections)
                         if len(gx3) > 0:
                             vx_v = vxs[valid_idx]
                             vy_v = vys[valid_idx]
                             vz_v = vzs[valid_idx]
-                            dx_v = vx_v[:, None] - gx3[None, :]   # (n_valid, N_grains)
+                            dx_v = vx_v[:, None] - gx3[None, :]
                             dy_v = vy_v[:, None] - gy3[None, :]
                             dz_v = vz_v[:, None] - gz3[None, :]
                             d_v  = np.sqrt(dx_v**2 + dy_v**2 + dz_v**2)
-    
-                            # Sphere–sphere intersection volume for each (void, grain) pair
+
                             overlapping = d_v < pore_r + gr3[None, :]
                             d_safe = np.where(overlapping, np.maximum(d_v, 1e-30), 1.0)
-    
+
                             h1 = (pore_r**2 - gr3[None, :]**2 + d_v**2) / (2.0 * d_safe)
                             h1c = np.maximum(pore_r - h1,              0.0)
                             h2c = np.maximum(gr3[None, :] - (d_v - h1), 0.0)
-    
+
                             cap_void  = math.pi * h1c**2 * (3*pore_r         - h1c) / 3
                             cap_grain = math.pi * h2c**2 * (3*gr3[None, :] - h2c) / 3
                             lens = cap_void + cap_grain
-    
+
                             fully = d_v <= np.abs(pore_r - gr3[None, :])
                             small_r = np.minimum(pore_r, gr3[None, :])
                             full_contained = 4/3 * math.pi * small_r**3
-    
+
                             intersection = np.where(
                                 ~overlapping, 0.0,
                                 np.where(fully, full_contained, lens))
-    
-                            total_intersection = intersection.sum(axis=1)   # (n_valid,)
+
+                            total_intersection = intersection.sum(axis=1)
                             counted_vols = np.clip(
                                 full_sphere_vol - total_intersection,
                                 0.0, full_sphere_vol)
                         else:
                             counted_vols = np.full(len(valid_idx), full_sphere_vol)
-    
+
                         fits = np.where(counted_vols <= remaining)[0]
                         if len(fits) == 0:
                             consecutive_failures += 1
                             continue
                         pick = int(valid_idx[fits[0]])
                         counted_vol = float(counted_vols[fits[0]])
-    
-                    # --- Accept the void ---
+
                     vx_new = float(vxs[pick])
                     vy_new = float(vys[pick])
                     vz_new = float(vzs[pick])
@@ -1520,7 +1572,7 @@ def gen_struct_combined_2or3D(
                     void_grid_3d[vci][vcj][vck].append(vi_new)
                     current_void_vol += counted_vol
                     consecutive_failures = 0
-    
+
                     if len(voids) % 500 == 0:
                         print(f"  Voids placed: {len(voids)}  "
                             f"fraction of domain: {current_void_vol/total_domain_vol:.4f}")
@@ -1545,8 +1597,6 @@ def gen_struct_combined_2or3D(
 
                     exhausted_grains = set()
 
-                    # FIX-AG: pass all_grains_arr so each worker can sum intersections
-                    # across all overlapping grains in ext+clipped mode.
                     all_grains_arr = np.array(spheres)
 
                     futures_map = {}
@@ -1558,9 +1608,9 @@ def gen_struct_combined_2or3D(
                             fut = executor.submit(
                                 _place_voids_in_grain_fast,
                                 grain, per_grain_budgets[grain_idx],
-                                seed, img_size, pore_placement, void_fraction_mode,
-                                all_grains_arr,   # FIX-AG: was None
-                                pore_radius_factor, max_iter = 3000, max_consecutive = 500
+                                seed, img_size_tuple, pore_placement, void_fraction_mode,
+                                all_grains_arr,
+                                pore_radius_factor, max_iter=3000, max_consecutive=500
                             )
                             futures_map[fut] = grain_idx
 
@@ -1600,7 +1650,7 @@ def gen_struct_combined_2or3D(
                                 continue
                             new_voids, vol_added = _place_voids_in_grain_fast(
                                 porous_spheres[grain_idx], budget,
-                                int(rng.integers(0, 2**31)), img_size=img_size,
+                                int(rng.integers(0, 2**31)), img_size=img_size_tuple,
                                 pore_placement=pore_placement,
                                 void_fraction_mode=void_fraction_mode,
                                 all_grains_arr=all_grains_arr,
@@ -1625,8 +1675,8 @@ def gen_struct_combined_2or3D(
         except KeyboardInterrupt:
             print("\nKeyboardInterrupt caught — saving partial results...")
         finally:
-            save_xyzr(spheres, AP_xyzr, img_size, physical_size)
-            save_xyzr(voids, void_xyzr, img_size, physical_size)
+            save_xyzr(spheres, AP_xyzr, img_size_tuple, physical_size)
+            save_xyzr(voids, void_xyzr, img_size_tuple, physical_size)
             print(f"  Partial AP saved:   {AP_xyzr}  ({len(spheres)} grains)")
             print(f"  Partial void saved: {void_xyzr}  ({len(voids)} voids)")
 
@@ -1651,7 +1701,7 @@ def gen_struct_combined_2or3D(
             else:
                 print(f"  All grains within {MAX_VOID_FRACTION_PER_GRAIN*100:.0f}% cap. OK")
 
-        save_xyzr(voids, void_xyzr, img_size, physical_size)
+        save_xyzr(voids, void_xyzr, img_size_tuple, physical_size)
         return void_frac_domain
 
 
@@ -1659,19 +1709,10 @@ def gen_struct_combined_2or3D(
 # Worker function (must be top-level for ProcessPoolExecutor pickling)
 # ---------------------------------------------------------------------------
 
-def clipped_sphere_volume(x, y, z, r, lo=0.0, hi=1.0):
-    def cap(h):
-        if h <= 0:   return 0.0
-        if h >= 2*r: return 4/3 * math.pi * r**3
-        return math.pi * h**2 * (3*r - h) / 3
-    V  = 4/3 * math.pi * r**3
-    V -= cap(r - (x - lo));  V -= cap(r - (hi - x))
-    V -= cap(r - (y - lo));  V -= cap(r - (hi - y))
-    V -= cap(r - (z - lo));  V -= cap(r - (hi - z))
-    return max(V, 0.0)
-
-
 def compute_ap_volume_fraction_clipped(xyzr_path, physical_size, img_size=1.0, dim=3):
+    physical_size = _norm_physical_size(physical_size)
+    px_size, py_size, pz_size = physical_size
+
     data = np.loadtxt(xyzr_path)
     if data.ndim == 1:
         data = data[None, :]
@@ -1679,25 +1720,40 @@ def compute_ap_volume_fraction_clipped(xyzr_path, physical_size, img_size=1.0, d
     total_vol = 0.0
 
     if dim == 2:
-        total_domain = physical_size ** 2
+        total_domain = px_size * py_size
         for row in data:
             if len(row) < 4:
                 continue
             x, y, _, r = row[:4]
-            total_vol += math.pi * r**2
+            if x > r and x < px_size - r and y > r and y < py_size - r:
+                total_vol += math.pi * r**2
+            else:
+                def _seg(R, h):
+                    if h <= 0: return 0.0
+                    if h >= 2*R: return math.pi * R**2
+                    return R**2 * math.acos((R-h)/R) - (R-h)*math.sqrt(2*R*h - h**2)
+                A = math.pi * r**2
+                A -= _seg(r, r - x)
+                A -= _seg(r, r - (px_size - x))
+                A -= _seg(r, r - y)
+                A -= _seg(r, r - (py_size - y))
+                total_vol += max(A, 0.0)
         return total_vol / total_domain
     else:
-        total_domain = physical_size ** 3
+        total_domain = px_size * py_size * pz_size
         for row in data:
             if len(row) < 4:
                 continue
             x, y, z, r = row[:4]
-            if (x > r and x < physical_size - r and
-                y > r and y < physical_size - r and
-                z > r and z < physical_size - r):
+            if (x > r and x < px_size - r and
+                y > r and y < py_size - r and
+                z > r and z < pz_size - r):
                 total_vol += 4/3 * math.pi * r**3
             else:
-                total_vol += clipped_sphere_volume(x, y, z, r, 0.0, physical_size)
+                total_vol += clipped_sphere_volume(x, y, z, r, 0.0,
+                                                   hi_x=px_size,
+                                                   hi_y=py_size,
+                                                   hi_z=pz_size)
         return total_vol / total_domain
 
 
@@ -1745,7 +1801,7 @@ def _run_one_attempt(args):
             if os.path.exists(path): os.remove(path)
         return None
 
-    ap_vol = compute_ap_volume_fraction_clipped(ap_xyzr, physical_size, dim=dim) #+ 36.2 #HARD CODED CHANGE LATER
+    ap_vol = compute_ap_volume_fraction_clipped(ap_xyzr, physical_size, dim=dim)
     target_ap_vol = (vol_percent_solid + vol_percent_hollow + vol_percent_porous)
 
     mwd_error = abs(mwd - mwd_target)
@@ -1778,7 +1834,7 @@ def generate_structures_with_target_mwd(
     max_total_attempts=200,
     base_name="A",
     dim: Literal[2, 3] = 2,
-    physical_size=200e-6,
+    physical_size=200e-6,       # scalar or (px, py, pz) tuple
     rad_dev=0.4,
     max_attempts=800000,
     vol_percent_solid=0,
@@ -1812,7 +1868,6 @@ def generate_structures_with_target_mwd(
         void_fraction_mode=void_fraction_mode,
         pore_radius_factor=pore_radius_factor,
         existing_ap_xyzr=existing_ap_xyzr,
-
     )
 
     accepted = []; accepted_idx = 0; attempt_idx = 0
@@ -1876,6 +1931,10 @@ def plot_from_xyzr(ap_xyzr_path, void_xyzr_path, save_path,
                    ap_alpha=1.0, sphere_resolution=20, max_spheres=None,
                    elev=25, azim=45, alpha=0.6):
 
+    physical_size = _norm_physical_size(physical_size)
+    px_size, py_size, pz_size = physical_size
+    max_phys = max(physical_size)
+
     def read_xyzr(path):
         pts = []
         if not os.path.exists(path) or os.path.getsize(path) == 0:
@@ -1886,11 +1945,11 @@ def plot_from_xyzr(ap_xyzr_path, void_xyzr_path, save_path,
                 vals = line.strip().split()
                 if len(vals) == 3:
                     x, y, r = map(float, vals)
-                    pts.append((x/physical_size*img_size, y/physical_size*img_size, 0, r/physical_size*img_size))
+                    pts.append((x/px_size*img_size, y/py_size*img_size, 0, r/max_phys*img_size))
                 elif len(vals) >= 4:
                     x, y, z, r = map(float, vals[:4])
-                    pts.append((x/physical_size*img_size, y/physical_size*img_size,
-                                z/physical_size*img_size, r/physical_size*img_size))
+                    pts.append((x/max_phys*img_size, y/max_phys*img_size,
+                    z/max_phys*img_size, r/max_phys*img_size))
         return pts
 
     circles = read_xyzr(ap_xyzr_path)
@@ -1930,7 +1989,7 @@ def plot_from_xyzr(ap_xyzr_path, void_xyzr_path, save_path,
         plt.close(fig)
 
 
-# ----------------------------------------------x-----------------------------
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1939,9 +1998,9 @@ def main():
     generate_structures_with_target_mwd(
         '50x200_domains',
         target_mwd=4.0e-6,
-        base_name="nonvoid_ap55_vf00",
+        base_name="nonvoid_ap55_vf00_200",
         dim=3,
-        physical_size=200e-6,
+        physical_size=(200e-6, 200e-6, 200e-6),  
         mean_rad_porous = 2e-6 / (1.2 * math.exp(math.sqrt(math.log(1 + 0.4 ** 2)) ** 2)),
         mean_rad_hollow = 2.2e-6 / (1.2 * math.exp(math.sqrt(math.log(1 + 0.4 ** 2)) ** 2)),
         mean_rad_solid=2e-6,
@@ -1952,30 +2011,26 @@ def main():
         n_workers=4,
         pore_placement='ext',
         void_fraction_mode="unclipped",
-    ) 
+    )
     '''
     generate_structures_with_target_mwd(
-        'experimental',
-        target_mwd=20e-6,
-        base_name="20_60_130_um_600um_domain_combined",
+        '50x200_domains',
+        target_mwd=4.0e-6,
+        base_name="nonvoid_ap55_vf00_100x50x50",
         dim=3,
-        physical_size=600e-6,
-        mean_rad_porous = 10e-6 / (1.2 * math.exp(math.sqrt(math.log(1 + 0.4 ** 2)) ** 2)),
+        physical_size=(100e-6, 50e-6, 50e-6),  
+        mean_rad_porous = 2e-6 / (1.2 * math.exp(math.sqrt(math.log(1 + 0.4 ** 2)) ** 2)),
         mean_rad_hollow = 2.2e-6 / (1.2 * math.exp(math.sqrt(math.log(1 + 0.4 ** 2)) ** 2)),
-        mean_rad_solid=50e-6,
+        mean_rad_solid=2e-6,
         void_fraction=0.0,
-        vol_percent_porous=0.73,#-0.362,
+        vol_percent_porous=0.55,
         vol_percent_hollow=0.0,
-        mwd_tolerance=1000e-6,
+        mwd_tolerance=0.2e-6,
         n_workers=4,
         pore_placement='ext',
-        void_fraction_mode="clipped",
-        rad_dev=0.1,
-        existing_ap_xyzr="experimental/60_130_um_600um_domain_00_AP.xyzr",
-        
+        void_fraction_mode="unclipped",
+        existing_ap_xyzr='50x200_domains/nonvoid_ap55_vf00_50x50x50_00_AP.xyzr',
     ) '''
-    
-    
 
 
 if __name__ == "__main__":

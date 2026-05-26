@@ -13,9 +13,9 @@ import matplotlib.patches as mpatches
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 
-AP_PATH   = "test_files/htpb_only_clipped_4um_vf03_ap55_00_AP.xyzr"
-VOID_PATH = "test_files/htpb_only_clipped_4um_vf03_ap55_00_void.xyzr"
-OUTPUT_IMAGE = "test_files/images/htpb_only_clipped_4um_vf03_ap55_00.png"
+AP_PATH   = "test_files/nonvoid_ap55_vf00_AP.xyzr"
+VOID_PATH = "test_files/nonvoid_ap55_vf00_void.xyzr"
+OUTPUT_IMAGE = "test_files/images/nonvoid_ap55_vf00.png"
 
 PHYSICAL_SIZE = 50e-6
 IMG_SIZE      = 1.0
@@ -30,7 +30,7 @@ AZIM   = 45
 AP_COLOR    = "#FF6B6B"   # red
 VOID_COLOR  = "#000000"   # black
 PLANE_COLOR = "#FFD700"
-BG_COLOR    = "#FFFFFF"  
+BG_COLOR    = "#4A90D9"  
 AP_FILL     = "#FF6B6B"   
 
 AP_ALPHA_3D = 1.0
@@ -245,7 +245,7 @@ def main():
     # Layered 2D slice
     ax2d_l = fig.add_subplot(133)
     draw_2d_layered(ax2d_l, circles, voids, htpb_only_clipped=HTPB_ONLY_CLIPPED)
-    title = "2D slice (htpb_only clipped)" if HTPB_ONLY_CLIPPED else "2D slice (layered)"
+    title = "2D slice (clipped)" if HTPB_ONLY_CLIPPED else "2D slice (layered)"
     ax2d_l.set_title(title)
 
     plt.tight_layout()

@@ -5,28 +5,12 @@ import numpy as np
 from tabulate import tabulate
 
 
-OUTPUT_FILE = "void_statistics_2D.txt"
+# ------------------------------------------------------------------------
+DATASET_PATH = "128x128"   # ← set this
 
-
-
-DENSITY_KG_M3 = 1.95 * 1000  # 1950 kg/m³
-
-MANUAL_VALUES = {
-    "A_vf_11": 2100,
-    "B_vf_6": 1600,
-    "C_vf_6": 1900,
-    "D_vf_7": 2100,
-    "E_vf_7": 1500,
-    "F_vf_6": 900,
-    "G_vf_14": 3100,
-    "H_vf_13": 2600,
-    "I": 2000,
-    "J": 1800,
-    "K": 1700,
-    "R": 500,
-    "S": 900,
-    "T": 1900,
-}
+DENSITY_KG_UM3   = 1.95e-15      # 1950 kg/m³ → kg/µm³
+SAMPLE_AREA_UM2  = 200 * 200      # µm²
+SAMPLE_DEPTH_UM  = 10             # µm
 # ------------------------------------------------------------------------
 
 
@@ -44,127 +28,77 @@ def read_radii(filename):
     return np.array(radii, dtype=float)
 
 
-def compute_AP_only_ratio(radii):
-    A = np.sum(np.pi * radii**2)
-    P = np.sum(2 * np.pi * radii)
-    return A / P
-
-
-def process_dataset(dataset_path):
-
-    AP_radii = []
+def main():
+    ap_radii   = []
     void_radii = []
 
-    for file in os.listdir(dataset_path):
-        full = os.path.join(dataset_path, file)
-        if file.endswith("_AP.xyzr"):
-            AP_radii.extend(read_radii(full))
-        elif file.endswith("_void.xyzr"):
-            void_radii.extend(read_radii(full))
+    for fname in sorted(os.listdir(DATASET_PATH)):
+        fpath = os.path.join(DATASET_PATH, fname)
+        if not os.path.isfile(fpath):
+            continue
+        if fname.endswith("_AP.xyzr"):
+            ap_radii.extend(read_radii(fpath))
+        elif fname.endswith("_void.xyzr"):
+            void_radii.extend(read_radii(fpath))
 
-    AP_radii   = np.array(AP_radii)
-    void_radii = np.array(void_radii)
+    ap_radii   = np.array(ap_radii,   dtype=float)
+    void_radii = np.array(void_radii, dtype=float)
 
-    if len(AP_radii) == 0:
-        return None
-
-    dataset_name = os.path.basename(dataset_path)
+    if len(ap_radii) == 0:
+        print("No *_AP.xyzr files found.")
+        return
 
     has_voids = len(void_radii) > 0
 
-    # ---- µm stats --------------------------------------------------------
-    AP_d   = 2 * AP_radii
-    AP_mwd = np.sum(AP_d**3) / np.sum(AP_d**2)
+    # ---- AP size distribution (µm) --------------------------------------
+    ap_d   = 2 * ap_radii
+    ap_mwd = np.sum(ap_d**3) / np.sum(ap_d**2)
 
-    if has_voids:
-        void_fraction = np.sum(np.pi * void_radii**2) / (10 * 200 * 200) * 100
-    else:
-        void_fraction = 0.0
-
-    # ---- SI --------------------------------------------------------------
-    AP_radii_m = AP_radii * 1e-6
-
-    A_AP   = np.sum(np.pi * AP_radii_m**2)
-    P_AP   = np.sum(2 * np.pi * AP_radii_m)
-
-    if has_voids:
-        void_radii_m = void_radii * 1e-6
-        A_void = np.sum(np.pi * void_radii_m**2)
-        P_void = np.sum(2 * np.pi * void_radii_m)
-    else:
-        A_void = 0.0
-        P_void = 0.0
-
-    # ---- total geometry --------------------------------------------------
-    V = A_AP - A_void          # 2D "volume"
-    S = P_AP + P_void          # total surface
-
-    V_over_S = V / S           # ALWAYS defined now
-
-    # ---- mass ------------------------------------------------------------
-    mass_kg = DENSITY_KG_M3 * V
-
-    # ---- surface relations -----------------------------------------------
-    mass_per_surface = DENSITY_KG_M3 * V_over_S   # kg/m²
-    specific_surface = 1.0 / mass_per_surface     # m²/kg
-
-    # ---- manual ----------------------------------------------------------
-    manual_value = MANUAL_VALUES.get(dataset_name, "")
-
-    # ---- formatting ------------------------------------------------------
-    def fmt(val, sci=False):
-        return f"{val:.4e}" if sci else f"{val:.4f}"
-
-    return [
-        dataset_name,
-        fmt(AP_mwd),
-        fmt(void_fraction),
-        fmt(V_over_S * 1e6),   # µm
-        fmt(V_over_S, sci=True),
-        fmt(mass_per_surface, sci=True),
-        fmt(specific_surface, sci=True),
-        manual_value,
-    ]
-
-
-def main():
-    base_dir = os.path.join(os.getcwd(), "2D_xyzrs")
-
-    datasets = sorted(
-        d for d in os.listdir(base_dir)
-        if os.path.isdir(os.path.join(base_dir, d))
+    # ---- void fraction ---------------------------------------------------
+    void_fraction = (
+        np.sum(np.pi * void_radii**2) / (SAMPLE_DEPTH_UM * SAMPLE_AREA_UM2) * 100
+        if has_voids else 0.0
     )
 
-    rows = []
-    for d in datasets:
-        result = process_dataset(os.path.join(base_dir, d))
-        if result:
-            rows.append(result)
+    # ---- geometry (all in µm) -------------------------------------------
+    A_ap   = np.sum(np.pi * ap_radii**2)
+    P_ap   = np.sum(2 * np.pi * ap_radii)
+    A_void = np.sum(np.pi * void_radii**2) if has_voids else 0.0
+    P_void = np.sum(2 * np.pi * void_radii) if has_voids else 0.0
 
-    headers = [
-        "Dataset",
-        "AP_mwd (µm)",
-        "Void_frac (%)",
-        "V/S (µm)",
-        "V/S (m)",
-        "m/S (kg/m²)",
-        "S/m (m²/kg)",
-        "Kogha Sw (m²/kg)",
+    V = A_ap - A_void       # µm²
+    S = P_ap + P_void       # µm
+    V_over_S = V / S        # µm
+
+    # ---- mass / surface (µm-based) --------------------------------------
+    mass_per_surface = DENSITY_KG_UM3 * V_over_S   # kg/µm²
+    specific_surface = 1.0 / mass_per_surface       # µm²/kg
+
+    # ---- output ----------------------------------------------------------
+    rows = [
+        ("AP spheres",                  f"{len(ap_radii)}"),
+        ("Void spheres",                f"{len(void_radii)}"),
+        ("AP mean-weighted diam (µm)",  f"{ap_mwd:.4f}"),
+        ("AP radius mean (µm)",         f"{ap_radii.mean():.4f}"),
+        ("AP radius std  (µm)",         f"{ap_radii.std():.4f}"),
+        ("AP radius min  (µm)",         f"{ap_radii.min():.4f}"),
+        ("AP radius max  (µm)",         f"{ap_radii.max():.4f}"),
+        ("Void fraction (%)",           f"{void_fraction:.4f}"),
+        ("A_AP   (µm²)",                f"{A_ap:.4e}"),
+        ("P_AP   (µm)",                 f"{P_ap:.4e}"),
+        ("A_void (µm²)",                f"{A_void:.4e}"),
+        ("P_void (µm)",                 f"{P_void:.4e}"),
+        ("V = A_AP − A_void (µm²)",     f"{V:.4e}"),
+        ("S = P_AP + P_void (µm)",      f"{S:.4e}"),
+        ("V/S (µm)",                    f"{V_over_S:.4f}"),
+        ("mass/S  (kg/µm²)",            f"{mass_per_surface:.4e}"),
+        ("S/mass  (µm²/kg)",            f"{specific_surface:.4e}"),
     ]
 
-    table = tabulate(
-        rows,
-        headers=headers,
-        tablefmt="simple",   # ← cleaner than "grid"
-        colalign=("left","right","right","right","right","right","right","right"),
-    )
-
-    print("\n" + table + "\n")
-
-    with open(OUTPUT_FILE, "w") as fh:
-        fh.write(table + "\n")
-
-    print(f"Results saved to {OUTPUT_FILE}")
+    print(f"\n{DATASET_PATH}\n")
+    print(tabulate(rows, headers=["Statistic", "Value"],
+                   tablefmt="simple", colalign=("left", "right")))
+    print()
 
 
 if __name__ == "__main__":
